@@ -6,7 +6,8 @@
   def home():
       return "ASH AI is running!"
 
-   @app.route("/webhook", methods=["GET", "POST"]) def webhook():
+   if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=10000)
      if request.method == "GET":
          verify_token = "ash_ai_verify_2026"
           mode = request.args.get("hub.mode")
