@@ -12,6 +12,8 @@ RUN apt-get update \
 WORKDIR /app
 
 COPY package.json package-lock.json ./
+# scripts/ must exist before npm ci: the postinstall hook runs scripts/check-native.js.
+COPY scripts ./scripts
 RUN npm ci
 
 COPY server ./server
