@@ -90,55 +90,79 @@ export async function groqChat({
     throw new GroqError('invalid_request', 'messages array is required', 400);
   }
 
-  const payload = { model: GROQ_MODEL, messages, temperature, max_tokens: maxTokens };
-  if (json) payload.response_format = { type: 'json_object' };
+  const candidates = modelCandidates();
+  let lastError = null;
 
-  let response;
-  try {
-    response = await fetch(GROQ_URL, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-  } catch (err) {
-    const kind = err?.name === 'TimeoutError' || err?.name === 'AbortError' ? 'timeout' : 'network';
-    throw new GroqError(kind, err?.message, kind === 'timeout' ? 504 : 502);
+  for (const model of candidates) {
+    for (const sendTemperature of [true, false]) {
+      const payload = { model, messages, max_tokens: maxTokens };
+      if (sendTemperature) payload.temperature = temperature;
+      if (json) payload.response_format = { type: 'json_object' };
+
+      let response;
+      try {
+        response = await fetch(GROQ_URL, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(timeoutMs),
+        });
+      } catch (err) {
+        const kind = err?.name === 'TimeoutError' || err?.name === 'AbortError' ? 'timeout' : 'network';
+        throw new GroqError(kind, err?.message, kind === 'timeout' ? 504 : 502);
+      }
+
+      const raw = await response.text();
+      let data = null;
+      try {
+        data = raw ? JSON.parse(raw) : null;
+      } catch {
+        data = null;
+      }
+
+      if (!response.ok) {
+        const providerMessage = data?.error?.message || `HTTP ${response.status}`;
+        const kind =
+          response.status === 401 || response.status === 403
+            ? 'unauthorized'
+            : response.status === 429
+              ? 'rate_limited'
+              : response.status === 400 || response.status === 404
+                ? 'invalid_request'
+                : 'upstream';
+        const err = new GroqError(kind, providerMessage, response.status === 429 ? 429 : 502);
+
+        // A retired *default* model is recoverable: move on to the next live model.
+        // An explicitly configured GROQ_MODEL is honoured, never silently swapped.
+        if (isRetiredModel(err) && candidates.indexOf(model) < candidates.length - 1) {
+          lastError = err;
+          break;
+        }
+        // Some models reject sampling parameters; retry once without temperature.
+        if (
+          sendTemperature &&
+          kind === 'invalid_request' &&
+          /temperature|max_tokens|unsupported/i.test(providerMessage)
+        ) {
+          lastError = err;
+          continue;
+        }
+        throw err;
+      }
+
+      const text = data?.choices?.[0]?.message?.content?.trim();
+      if (!text) throw new GroqError('bad_response', 'completion contained no text', 502);
+
+      return {
+        text,
+        model: data?.model || model,
+        usage: data?.usage || null,
+        provider: 'groq',
+      };
+    }
   }
 
-  const raw = await response.text();
-  let data = null;
-  try {
-    data = raw ? JSON.parse(raw) : null;
-  } catch {
-    data = null;
-  }
-
-  if (!response.ok) {
-    const kind =
-      response.status === 401 || response.status === 403
-        ? 'unauthorized'
-        : response.status === 429
-          ? 'rate_limited'
-          : response.status === 400
-            ? 'invalid_request'
-            : 'upstream';
-    throw new GroqError(
-      kind,
-      data?.error?.message || `HTTP ${response.status}`,
-      response.status === 429 ? 429 : 502
-    );
-  }
-
-  const text = data?.choices?.[0]?.message?.content?.trim();
-  if (!text) throw new GroqError('bad_response', 'completion contained no text', 502);
-
-  return {
-    text,
-    model: data?.model || GROQ_MODEL,
-    usage: data?.usage || null,
-    provider: 'groq',
-  };
+  throw lastError || new GroqError('upstream', 'no Groq model was available', 502);
 }
 
 /** Response body for a failed AI call. Contains no key, no provider stack trace. */
