@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Built client
+client/dist/
+
+# Runtime data: SQLite database, WAL files and uploaded media (never commit user data)
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Local secrets
+.env
+.env.*
+!.env.example
+
+# Native build output
+native/android/app/build/
+native/android/.gradle/
+native/android/local.properties
+native/android/app/src/main/assets/public/
+native/ios/App/Pods/
+
+# Tooling
+.DS_Store
+*.log
+npm-debug.log*
+coverage/
