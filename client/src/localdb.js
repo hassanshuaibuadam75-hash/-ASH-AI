@@ -9,6 +9,8 @@
 // non-extractable device key (see sealJson/openJson). The key never leaves the
 // device and cannot be read back out by script.
 
+import { reconcileSyncedPost } from './feedcache.js';
+
 const DB_NAME = 'ashmesh-local';
 const DB_VERSION = 1;
 
