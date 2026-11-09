@@ -426,23 +426,25 @@ export default function Feed() {
 
   const load = useCallback(async (nextCursor = null, append = false) => {
     // Show what this device already has before touching the network.
-    if (!append) {
-      const cached = await readFeed();
-      if (cached.length) {
-        setPosts(cached.filter((post) => !post.deleted));
-        setLoading(false);
-      }
+    const cached = append ? [] : visiblePosts(await readFeed());
+    if (cached.length) {
+      setPosts(cached);
+      setLoading(false);
     }
     try {
       const data = await api(`/feed${nextCursor ? `?before=${encodeURIComponent(nextCursor)}` : ''}`);
-      setPosts((prev) => (append ? [...prev, ...(data.posts || [])] : data.posts || []));
+      const incoming = data.posts || [];
+      // MERGE, never replace. A server page that does not contain a post created on this
+      // device — still queued, or missing from a lagging read — must not remove it.
+      setPosts((prev) => mergePosts(append ? prev : cached, incoming));
       setCursor(data.nextCursor || null);
       setOffline(false);
-      if (!append) await cacheFeed(data.posts || []);
+      if (!append) await cacheFeed(incoming);
     } catch (err) {
-      const cached = await readFeed();
-      if (cached.length) {
-        setPosts(cached.filter((post) => !post.deleted));
+      // The request failed: keep everything already stored on the device.
+      const local = visiblePosts(await readFeed());
+      if (local.length) {
+        setPosts(local);
         setOffline(true);
       } else {
         toast.push(err.message, 'error');
