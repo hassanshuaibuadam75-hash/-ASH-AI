@@ -57,23 +57,22 @@ function Composer({ onCreated, user }) {
       if (offline && !file) {
         const createdAt = new Date().toISOString();
         await enqueue({ clientId, type: 'post', body: body.trim(), audience, createdAt, attempts: 0 });
-        onCreated({
-          id: clientId,
+        // Store the post itself, not only the outbox entry. Closing the app must never
+        // lose it: this row is what the feed renders from until the server accepts it.
+        const localPost = localPostFromDraft({
           clientId,
           body: body.trim(),
-          kind: 'text',
           audience,
-          mediaUrl: null,
           createdAt,
-          updatedAt: createdAt,
-          edited: false,
-          author: { id: 'me', username: '', fullName: '' },
-          likedByMe: false,
-          counts: { likes: 0, comments: 0, shares: 0 },
-          isOwner: true,
-          pending: true,
-          transport: 'queued',
+          author: {
+            id: user?.id || 'me',
+            username: user?.username || '',
+            fullName: user?.fullName || 'You',
+            avatarUrl: user?.avatarUrl || null,
+          },
         });
+        await cacheFeed([localPost]);
+        onCreated(localPost);
         setBody('');
         toast.push('Saved offline — will post automatically.', 'success');
       } else if (offline) {
