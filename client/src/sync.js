@@ -10,6 +10,7 @@
 // last-writer-wins on updatedAt, so newer local edits are never overwritten by older
 // server copies, and vice versa.
 import { api } from './api.js';
+import { mergePosts, reconcileSyncedPost } from './feedcache.js';
 import { flushOutboxViaNearby } from './nearby.js';
 import {
   cacheAcademy,
