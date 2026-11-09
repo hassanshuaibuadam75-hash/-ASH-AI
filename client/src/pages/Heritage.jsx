@@ -138,8 +138,8 @@ function CreateEntry({ onClose, onCreated, toast }) {
   const [busy, setBusy] = useState(false);
 
   async function submit() {
-    if (title.trim().length < 3) return toast('Give this entry a title of at least 3 characters.', 'error');
-    if (!body.trim()) return toast('Write the story or knowledge you are preserving.', 'error');
+    if (title.trim().length < 3) return toast.push('Give this entry a title of at least 3 characters.', 'error');
+    if (!body.trim()) return toast.push('Write the story or knowledge you are preserving.', 'error');
     setBusy(true);
     try {
       const form = new FormData();
@@ -150,10 +150,10 @@ function CreateEntry({ onClose, onCreated, toast }) {
       if (language.trim()) form.append('language', language.trim());
       if (file) form.append('file', file);
       await api('/heritage', { method: 'POST', form });
-      toast('Heritage entry saved');
+      toast.push('Heritage entry saved');
       onCreated();
     } catch (err) {
-      toast(err.message || 'Could not save the entry', 'error');
+      toast.push(err.message || 'Could not save the entry', 'error');
     } finally {
       setBusy(false);
     }
@@ -221,18 +221,18 @@ function EntryDetail({ id, me, offline, onClose, onChanged, toast }) {
       setEntry(data.entry);
       onChanged?.();
     } catch (err) {
-      toast(err.message || 'Could not record that reaction', 'error');
+      toast.push(err.message || 'Could not record that reaction', 'error');
     }
   }
 
   async function remove() {
     try {
       await api(`/heritage/${id}?confirm=1`, { method: 'DELETE' });
-      toast('Entry deleted');
+      toast.push('Entry deleted');
       onChanged?.();
       onClose();
     } catch (err) {
-      toast(err.message || 'Could not delete the entry', 'error');
+      toast.push(err.message || 'Could not delete the entry', 'error');
     }
   }
 

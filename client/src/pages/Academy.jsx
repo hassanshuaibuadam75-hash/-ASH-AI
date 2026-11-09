@@ -130,7 +130,7 @@ function CreateCourse({ onClose, onCreated, toast }) {
   const [busy, setBusy] = useState(false);
 
   async function submit() {
-    if (title.trim().length < 3) return toast('Give the course a title of at least 3 characters.', 'error');
+    if (title.trim().length < 3) return toast.push('Give the course a title of at least 3 characters.', 'error');
     setBusy(true);
     try {
       const form = new FormData();
@@ -140,10 +140,10 @@ function CreateCourse({ onClose, onCreated, toast }) {
       form.append('level', level);
       if (file) form.append('file', file);
       await api('/academy/courses', { method: 'POST', form });
-      toast('Course published');
+      toast.push('Course published');
       onCreated();
     } catch (err) {
-      toast(err.message || 'Could not publish the course', 'error');
+      toast.push(err.message || 'Could not publish the course', 'error');
     } finally {
       setBusy(false);
     }
@@ -208,7 +208,7 @@ function CourseDetail({ id, me, offline, onClose, onChanged, toast }) {
       setCourse(data.course);
       onChanged?.();
     } catch (err) {
-      toast(err.message || 'Could not enrol', 'error');
+      toast.push(err.message || 'Could not enrol', 'error');
     }
   }
 
@@ -222,18 +222,18 @@ function CourseDetail({ id, me, offline, onClose, onChanged, toast }) {
       setCourse(data.course);
       onChanged?.();
     } catch (err) {
-      toast(err.message || 'Could not save progress', 'error');
+      toast.push(err.message || 'Could not save progress', 'error');
     }
   }
 
   async function remove() {
     try {
       await api(`/academy/courses/${id}?confirm=1`, { method: 'DELETE' });
-      toast('Course deleted');
+      toast.push('Course deleted');
       onChanged?.();
       onClose();
     } catch (err) {
-      toast(err.message || 'Could not delete the course', 'error');
+      toast.push(err.message || 'Could not delete the course', 'error');
     }
   }
 
@@ -331,7 +331,7 @@ function AddLesson({ courseId, onClose, onAdded, toast }) {
   const [busy, setBusy] = useState(false);
 
   async function submit() {
-    if (!title.trim()) return toast('A lesson needs a title.', 'error');
+    if (!title.trim()) return toast.push('A lesson needs a title.', 'error');
     setBusy(true);
     try {
       const data = await api(`/academy/courses/${courseId}/lessons`, {
@@ -340,7 +340,7 @@ function AddLesson({ courseId, onClose, onAdded, toast }) {
       });
       onAdded(data.course);
     } catch (err) {
-      toast(err.message || 'Could not add the lesson', 'error');
+      toast.push(err.message || 'Could not add the lesson', 'error');
     } finally {
       setBusy(false);
     }

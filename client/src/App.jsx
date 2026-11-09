@@ -15,6 +15,8 @@ import Notifications from './pages/Notifications.jsx';
 import Settings from './pages/Settings.jsx';
 import Founder from './pages/Founder.jsx';
 import Admin from './pages/Admin.jsx';
+import Academy from './pages/Academy.jsx';
+import Heritage from './pages/Heritage.jsx';
 
 const AuthCtx = createContext(null);
 export const useAuth = () => useContext(AuthCtx);
@@ -64,6 +66,8 @@ const NAV = [
   { to: '/messages', label: 'Messages', icon: '✉' },
   { to: '/market', label: 'Market', icon: '▤' },
   { to: '/ai', label: '#ash AI', icon: '✦' },
+  { to: '/academy', label: 'Academy', icon: '✎' },
+  { to: '/heritage', label: 'Heritage', icon: '◈' },
   { to: '/notifications', label: 'Alerts', icon: '◔' },
 ];
 
@@ -234,6 +238,8 @@ function Shell() {
           <Route path="/market" element={<Market />} />
           <Route path="/market/:id" element={<Market />} />
           <Route path="/ai" element={<AI />} />
+          <Route path="/academy" element={<Academy />} />
+          <Route path="/heritage" element={<Heritage />} />
           <Route path="/notifications" element={<Notifications />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/u/:username" element={<Profile />} />
