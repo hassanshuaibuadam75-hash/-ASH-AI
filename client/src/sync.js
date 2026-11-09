@@ -144,9 +144,7 @@ export async function flushOutbox({ limit = 25 } = {}) {
         // with the accepted row, so the post survives a reload and is never shown twice.
         if (item.type === 'post' && result.post) {
           // eslint-disable-next-line no-await-in-loop
-          const rows = await readFeed();
-          // eslint-disable-next-line no-await-in-loop
-          await cacheFeed(reconcileSyncedPost(rows, item.clientId, result.post));
+          await cacheSyncedPost(item.clientId, result.post);
         }
         // eslint-disable-next-line no-await-in-loop
         await dequeue(item.clientId);
