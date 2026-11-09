@@ -457,6 +457,184 @@ async function run() {
   const anonPush = await new Client('anon').post('/api/sync/push', { operations: [] });
   check('sync push requires authentication', anonPush.status === 401, `status=${anonPush.status}`);
 
+  /* ---- #ash AI: chat, approvals, support, moderation, permissions ---- */
+
+  // Chat with no key configured: a safe, honest error — never invented text.
+  const aiChat = await member.post('/api/ai/chat', {
+    messages: [{ role: 'user', content: 'What can you help me with?' }],
+  });
+  check(
+    'AI chat without a key returns a safe error instead of a fake reply',
+    aiChat.status >= 400 && !aiChat.body?.reply && !!aiChat.body?.error,
+    `status=${aiChat.status} ${aiChat.text.slice(0, 160)}`
+  );
+  check(
+    'AI chat error is friendly and does not leak a key value',
+    typeof aiChat.body?.message === 'string' && aiChat.body.message.length > 0 && !/gsk_[A-Za-z0-9]{10,}/.test(aiChat.text),
+    JSON.stringify(aiChat.body?.message).slice(0, 160)
+  );
+
+  const aiAnon = await new Client('anon').post('/api/ai/chat', { messages: [{ role: 'user', content: 'hi' }] });
+  check('AI chat requires authentication', aiAnon.status === 401, `status=${aiAnon.status}`);
+
+  check(
+    'no AI response ever exposes a Groq key',
+    ![aiStatus.text, aiCall.text, aiChat.text].some((t) => /gsk_[A-Za-z0-9]{10,}/.test(t || '')),
+    'a gsk_ token appeared in an AI response body'
+  );
+
+  // Consent: nothing is published without explicit approval.
+  const unapproved = await member.post('/api/ai/actions', { type: 'post', body: 'Published without approval' });
+  check(
+    'AI cannot post on a user behalf without approval',
+    unapproved.status === 400 && unapproved.body?.error === 'approval_required',
+    `status=${unapproved.status} ${unapproved.text.slice(0, 140)}`
+  );
+
+  // The official AI identity is staff-only.
+  const impersonate = await member.post('/api/ai/actions', {
+    type: 'post',
+    body: 'Pretending to be #ash AI',
+    approved: true,
+    asAiAccount: true,
+  });
+  check(
+    'a normal member cannot publish as the official #ash AI account',
+    impersonate.status === 403,
+    `status=${impersonate.status} ${impersonate.text.slice(0, 140)}`
+  );
+
+  const aiPost = await member.post('/api/ai/actions', {
+    type: 'post',
+    body: 'Drafted with #ash AI and approved by me.',
+    approved: true,
+    clientId: 'ai-post-1',
+    audience: 'public',
+  });
+  const aiPostId = aiPost.body?.post?.id;
+  check('approved AI-assisted post is published', aiPost.status === 201 && !!aiPostId, `status=${aiPost.status} ${aiPost.text.slice(0, 180)}`);
+  check('AI-assisted post is labelled AI-generated', aiPost.body?.post?.aiGenerated === true, JSON.stringify(aiPost.body?.post?.aiGenerated));
+
+  const aiFeed = await founder.get('/api/feed?limit=50');
+  check(
+    'AI-assisted post appears in another user feed',
+    (aiFeed.body?.posts || []).some((p) => p.id === aiPostId),
+    `feed=${(aiFeed.body?.posts || []).length}`
+  );
+
+  // Replaying a queued action must never duplicate it.
+  const aiReplay = await member.post('/api/ai/actions', {
+    type: 'post',
+    body: 'Drafted with #ash AI and approved by me.',
+    approved: true,
+    clientId: 'ai-post-1',
+  });
+  check('replaying an approved AI action is deduplicated', aiReplay.body?.deduped === true, JSON.stringify(aiReplay.body).slice(0, 160));
+
+  const dupCheck = await founder.get('/api/feed?limit=50');
+  const dupCount = (dupCheck.body?.posts || []).filter((p) => p.id === aiPostId).length;
+  check('the AI-assisted post exists exactly once', dupCount === 1, `occurrences=${dupCount}`);
+
+  const aiComment = await member.post('/api/ai/actions', {
+    type: 'comment',
+    postId: aiPostId,
+    body: 'A comment I approved.',
+    approved: true,
+    clientId: 'ai-comment-1',
+  });
+  check('approved AI-assisted comment is created', aiComment.status === 201, `status=${aiComment.status} ${aiComment.text.slice(0, 160)}`);
+
+  const aiLike = await member.post('/api/ai/actions', {
+    type: 'like',
+    postId: aiPostId,
+    approved: true,
+    clientId: 'ai-like-1',
+  });
+  check('approved AI-assisted like is applied', aiLike.status === 201 && aiLike.body?.liked === true, JSON.stringify(aiLike.body).slice(0, 160));
+
+  const aiShare = await member.post('/api/ai/actions', {
+    type: 'share',
+    postId: aiPostId,
+    body: 'Sharing this with my friends.',
+    approved: true,
+    clientId: 'ai-share-1',
+  });
+  check('approved AI-assisted share creates a share post', aiShare.status === 201 && !!aiShare.body?.post?.id, `status=${aiShare.status} ${aiShare.text.slice(0, 160)}`);
+
+  const aiAudit = await member.get('/api/ai/actions');
+  check('AI actions are recorded in an audit trail', (aiAudit.body?.actions || []).length >= 4, `count=${(aiAudit.body?.actions || []).length}`);
+
+  // Support requests are real records, triaged by AI only when available.
+  const ticket = await member.post('/api/ai/support/tickets', {
+    subject: 'Profile photo will not upload',
+    message: 'When I choose a photo nothing happens.',
+    category: 'technical',
+  });
+  const ticketId = ticket.body?.ticket?.id;
+  check('support request is created', ticket.status === 201 && !!ticketId, `status=${ticket.status} ${ticket.text.slice(0, 180)}`);
+  check(
+    'support request stores the user message',
+    (ticket.body?.ticket?.messages || []).length >= 1,
+    `messages=${(ticket.body?.ticket?.messages || []).length}`
+  );
+
+  const myTickets = await member.get('/api/ai/support/tickets');
+  check('user can list their own support requests', (myTickets.body?.tickets || []).some((t) => t.id === ticketId), `count=${(myTickets.body?.tickets || []).length}`);
+
+  const anonTicket = await new Client('anon').get(`/api/ai/support/tickets/${ticketId}`);
+  check('support requests are not readable without signing in', anonTicket.status === 401, `status=${anonTicket.status}`);
+
+  const ticketReply = await member.post(`/api/ai/support/tickets/${ticketId}/messages`, { body: 'It still does not work.' });
+  check('user can add to their support request', ticketReply.status === 201 || ticketReply.status === 200, `status=${ticketReply.status}`);
+
+  // Moderation: local rules always work; AI analysis is an upgrade, not a requirement.
+  const spamCheck = await member.post('/api/ai/moderate/check', {
+    text: 'WIN A FREE IPHONE NOW!!! click http://bit.ly/free and send your bank details',
+  });
+  check(
+    'moderation check flags obvious spam with local rules',
+    spamCheck.status === 200 && spamCheck.body?.spam === true && spamCheck.body?.provider === 'heuristic',
+    JSON.stringify(spamCheck.body).slice(0, 200)
+  );
+
+  const cleanCheck = await member.post('/api/ai/moderate/check', { text: 'I enjoyed the #ash Academy lesson on solar power today.' });
+  check('moderation check does not flag ordinary text', cleanCheck.status === 200 && cleanCheck.body?.spam === false, JSON.stringify(cleanCheck.body).slice(0, 160));
+
+  const memberFlag = await member.post('/api/ai/moderate/flag', { postId: aiPostId, reason: 'test flag' });
+  check('a normal member cannot create moderation flags', memberFlag.status === 403, `status=${memberFlag.status}`);
+
+  const staffFlag = await founder.post('/api/ai/moderate/flag', { postId: aiPostId, reason: 'Automated suite flag' });
+  check('staff can flag content for review', staffFlag.status === 201, `status=${staffFlag.status} ${staffFlag.text.slice(0, 160)}`);
+
+  const flagList = await founder.get('/api/ai/moderate/flags');
+  check('flagged content appears for staff review', (flagList.body?.flags || []).some((f) => f.postId === aiPostId), `count=${(flagList.body?.flags || []).length}`);
+
+  // Platform management is staff-only and read-only.
+  const memberSummary = await member.get('/api/ai/summary');
+  check('non-staff cannot read the AI platform summary', memberSummary.status === 403, `status=${memberSummary.status}`);
+
+  const founderSummary = await founder.get('/api/ai/summary');
+  check(
+    'staff summary reports real platform counts',
+    founderSummary.status === 200 && (founderSummary.body?.counts?.users ?? 0) >= 2,
+    JSON.stringify(founderSummary.body?.counts).slice(0, 200)
+  );
+  check(
+    'summary reports AI as not connected instead of inventing a narrative',
+    founderSummary.body?.narrative === null && founderSummary.body?.narrativeError?.error === 'ai_not_configured',
+    JSON.stringify(founderSummary.body?.narrativeError).slice(0, 160)
+  );
+
+  const aiAccount = await member.get('/api/ai/account');
+  check('official #ash AI account is identified as AI', aiAccount.status === 200 && aiAccount.body?.account?.isAi === true, JSON.stringify(aiAccount.body?.account || null).slice(0, 160));
+
+  const marketHelp = await member.get('/api/ai/marketplace/help');
+  check(
+    'marketplace help serves the approved commission rules',
+    marketHelp.status === 200 && /commission/i.test(marketHelp.text),
+    `status=${marketHelp.status} ${marketHelp.text.slice(0, 160)}`
+  );
+
   /* ---- logout ---- */
   const logout = await founder.post('/api/auth/logout', {});
   check('logout succeeds', logout.status === 200, `status=${logout.status}`);
