@@ -139,6 +139,14 @@ export async function flushOutbox({ limit = 25 } = {}) {
       // eslint-disable-next-line no-await-in-loop
       const result = await sendOutboxItem(item);
       if (result.ok) {
+        // Keep the cached copy in step with the server: replace the offline placeholder
+        // with the accepted row, so the post survives a reload and is never shown twice.
+        if (item.type === 'post' && result.post) {
+          // eslint-disable-next-line no-await-in-loop
+          const rows = await readFeed();
+          // eslint-disable-next-line no-await-in-loop
+          await cacheFeed(reconcileSyncedPost(rows, item.clientId, result.post));
+        }
         // eslint-disable-next-line no-await-in-loop
         await dequeue(item.clientId);
         sent += 1;
