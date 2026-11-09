@@ -2,7 +2,7 @@
 # Multi-stage: the client is built inside the image (client/dist is not committed) and dev
 # dependencies are pruned before the runtime layer. Only the paths the server actually needs are
 # copied, so a host node_modules directory can never leak into the build.
-FROM node:26-slim AS build
+FROM node:24-slim AS build
 
 RUN apt-get update \
  && apt-get -y upgrade \
@@ -21,7 +21,7 @@ COPY client ./client
 RUN npm run build \
  && npm prune --omit=dev
 
-FROM node:26-slim AS runtime
+FROM node:24-slim AS runtime
 
 # Distributor security fixes for the runtime OS packages, then keep the image lean.
 RUN apt-get update \
