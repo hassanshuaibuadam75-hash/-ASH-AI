@@ -2,7 +2,11 @@
 # Multi-stage: the client is built inside the image (client/dist is not committed) and dev
 # dependencies are pruned before the runtime layer. Only the paths the server actually needs are
 # copied, so a host node_modules directory can never leak into the build.
-FROM node:24-slim AS build
+#
+# Base is Node 24 LTS on Debian 13 (trixie). Debian 12 (bookworm) still ships glibc 2.36,
+# zlib 1.2.13, acl 2.3.1 and gcc-12, which carry high/critical advisories with no fix published
+# for that release; trixie ships the fixed/current versions instead.
+FROM node:24-trixie-slim AS build
 
 RUN apt-get update \
  && apt-get -y upgrade \
@@ -23,7 +27,7 @@ COPY client ./client
 RUN npm run build \
  && npm prune --omit=dev
 
-FROM node:24-slim AS runtime
+FROM node:24-trixie-slim AS runtime
 
 # Distributor security fixes for the runtime OS packages, then keep the image lean.
 RUN apt-get update \
