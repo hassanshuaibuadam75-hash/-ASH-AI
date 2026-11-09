@@ -323,17 +323,21 @@ router.get('/friends', requireAuth, (req, res) => {
 });
 
 router.get('/friends/requests', requireAuth, (req, res) => {
+  // NOTE: f.id must be aliased. With `SELECT f.id, u.*` the user row's `id` column wins in the
+  // mapped object, so the friendship id would be lost and accept/reject/cancel would 404.
   const incoming = db.prepare(
-    `SELECT f.id, f.created_at, u.* FROM friendships f JOIN users u ON u.id = f.requester_id
-     WHERE f.addressee_id = ? AND f.status = 'pending' ORDER BY f.created_at DESC`
+    `SELECT f.id AS friendship_id, f.created_at AS requested_at, u.*
+       FROM friendships f JOIN users u ON u.id = f.requester_id
+      WHERE f.addressee_id = ? AND f.status = 'pending' ORDER BY f.created_at DESC`
   ).all(req.user.id);
   const outgoing = db.prepare(
-    `SELECT f.id, f.created_at, u.* FROM friendships f JOIN users u ON u.id = f.addressee_id
-     WHERE f.requester_id = ? AND f.status = 'pending' ORDER BY f.created_at DESC`
+    `SELECT f.id AS friendship_id, f.created_at AS requested_at, u.*
+       FROM friendships f JOIN users u ON u.id = f.addressee_id
+      WHERE f.requester_id = ? AND f.status = 'pending' ORDER BY f.created_at DESC`
   ).all(req.user.id);
   res.json({
-    incoming: incoming.map((r) => ({ requestId: r.id, createdAt: r.created_at, user: toPublicUser(r, req.user.id) })),
-    outgoing: outgoing.map((r) => ({ requestId: r.id, createdAt: r.created_at, user: toPublicUser(r, req.user.id) })),
+    incoming: incoming.map((r) => ({ requestId: r.friendship_id, createdAt: r.requested_at, user: toPublicUser(r, req.user.id) })),
+    outgoing: outgoing.map((r) => ({ requestId: r.friendship_id, createdAt: r.requested_at, user: toPublicUser(r, req.user.id) })),
   });
 });
 
