@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, formatTime } from '../api.js';
 import { cacheFeed, readFeed, enqueue, newClientId } from '../localdb.js';
+import { localPostFromDraft, mergePosts, visiblePosts } from '../feedcache.js';
 import { useAuth } from '../App.jsx';
 import { Avatar, ConfirmDialog, Empty, Field, Modal, Spinner, useToast, Badge } from '../ui.jsx';
 import ModelViewer from '../components/ModelViewer.jsx';
