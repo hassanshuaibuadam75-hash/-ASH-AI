@@ -15,6 +15,7 @@ import { flushOutboxViaNearby } from './nearby.js';
 import {
   cacheAcademy,
   cacheFeed,
+  cacheSyncedPost,
   cacheHeritage,
   cacheMarket,
   cacheProfile,
