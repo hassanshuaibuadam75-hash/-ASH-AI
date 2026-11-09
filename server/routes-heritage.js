@@ -126,7 +126,9 @@ router.post(
   },
 );
 
-router.get('/heritage/:id', requireAuth, (req, res) => {
+router.get('/heritage/:id', requireAuth, (req, res, next) => {
+  // Reserved sub-resources must not be captured as an entry id.
+  if (req.params.id === 'offline-bundle') return next();
   const row = loadEntry(req.params.id);
   if (!row) return res.status(404).json({ error: 'not_found', message: 'Entry not found.' });
   if (!row.published && !canManage(req.user, row)) {
