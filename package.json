@@ -12,6 +12,7 @@
     "start": "node server/index.js",
     "dev": "node server/index.js",
     "test": "node tests/run-tests.js && node tests/offline-feed.test.mjs",
+    "test:groq": "node tests/groq-live.mjs",
     "postinstall": "node scripts/check-native.js"
   },
   "dependencies": {
