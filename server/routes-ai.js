@@ -296,30 +296,117 @@ function systemPrompt(surface) {
 // Local heuristics — work offline and always available
 // ---------------------------------------------------------------------------
 
+// Weighted signals. A single high-severity signal (someone asking for bank details,
+// card numbers or a one-time password) is enough to flag text for review; weaker
+// signals have to accumulate before the text is treated as spam. Ordinary
+// conversation must stay unflagged, so every pattern is specific rather than
+// matching a bare word like "free" on its own.
 const SPAM_PATTERNS = [
-  { re: /\b(click|tap)\s+(here|this link)\b/i, reason: 'Asks the reader to click an unspecified link' },
-  { re: /\b(guaranteed|double)\s+(profit|returns|your money)\b/i, reason: 'Promises guaranteed financial returns' },
-  { re: /\b(send|pay)\s+(me\s+)?(money|cash|btc|usdt)\b/i, reason: 'Requests direct payment' },
-  { re: /\b(urgent|act now)\b.{0,40}\b(account|wallet|bank)\b/i, reason: 'Urgency plus account pressure (phishing pattern)' },
-  { re: /\b(winner|won|prize|lottery)\b/i, reason: 'Prize or lottery claim' },
-  { re: /\bwhatsapp\s*\+?\d{7,}/i, reason: 'Off-platform contact number' },
-  { re: /(.)\1{6,}/, reason: 'Repeated character padding' },
+  {
+    re: /\b(bank\s+details|account\s+number|card\s+number|cvv|pin\b|otp\b|one[-\s]?time\s+password|bvn\b|seed\s+phrase|private\s+key|login\s+details)\b/i,
+    reason: 'Asks for sensitive financial or account details',
+    weight: 0.55,
+    high: true,
+    category: 'scam',
+  },
+  {
+    re: /\b(free)\b.{0,30}\b(iphone|ipad|giveaway|prize|cash|money|gift\s*card|airtime|data\s*bonus|laptop)\b/i,
+    reason: 'Offers a free high-value item',
+    weight: 0.35,
+    category: 'scam',
+  },
+  {
+    re: /\b(iphone|ipad|giveaway|prize|cash|gift\s*card|laptop)\b.{0,30}\b(free)\b/i,
+    reason: 'Offers a free high-value item',
+    weight: 0.35,
+    category: 'scam',
+  },
+  {
+    re: /\b(bit\.ly|tinyurl\.com|t\.co|goo\.gl|t\.me|wa\.me|cutt\.ly|is\.gd)\b/i,
+    reason: 'Uses a link shortener typical of scams',
+    weight: 0.3,
+    category: 'scam',
+  },
+  {
+    re: /\b(click|tap)\s+(here|this\s+link)\b/i,
+    reason: 'Asks the reader to click an unspecified link',
+    weight: 0.25,
+    category: 'spam',
+  },
+  {
+    re: /\b(guaranteed|double)\s+(profit|returns|your\s+money)\b/i,
+    reason: 'Promises guaranteed financial returns',
+    weight: 0.4,
+    category: 'scam',
+  },
+  {
+    re: /\b(send|pay|transfer)\s+(me\s+)?(money|cash|btc|usdt)\b/i,
+    reason: 'Requests direct payment',
+    weight: 0.4,
+    category: 'scam',
+  },
+  {
+    re: /\b(urgent|act\s+now|limited\s+time|last\s+chance|expires\s+today)\b.{0,40}\b(account|wallet|bank|payment)\b/i,
+    reason: 'Urgency plus account pressure (phishing pattern)',
+    weight: 0.35,
+    category: 'scam',
+  },
+  {
+    re: /\b(winner|you\s+have\s+won|congratulations,?\s+you|lottery|claim\s+your\s+(prize|reward))\b/i,
+    reason: 'Prize or lottery claim',
+    weight: 0.3,
+    category: 'spam',
+  },
+  {
+    re: /\bwhatsapp\s*\+?\d{7,}/i,
+    reason: 'Off-platform contact number',
+    weight: 0.2,
+    category: 'spam',
+  },
+  { re: /(.)\1{6,}/, reason: 'Repeated character padding', weight: 0.2, category: 'spam' },
 ];
 
 export function spamHeuristics(text) {
   const body = String(text || '');
   const reasons = [];
-  for (const { re, reason } of SPAM_PATTERNS) {
-    if (re.test(body)) reasons.push(reason);
+  let score = 0;
+  let highSeverity = false;
+  let category = 'none';
+
+  for (const { re, reason, weight, high, category: kind } of SPAM_PATTERNS) {
+    if (re.test(body)) {
+      if (!reasons.includes(reason)) {
+        reasons.push(reason);
+        score += weight;
+      }
+      if (high) highSeverity = true;
+      if (category === 'none' || kind === 'scam') category = kind;
+    }
   }
+
   const letters = body.replace(/[^a-zA-Z]/g, '');
   const capitals = body.replace(/[^A-Z]/g, '');
   const shouty = letters.length > 20 && capitals.length / letters.length > 0.7;
-  if (shouty) reasons.push('Mostly capital letters');
-  if ((body.match(/https?:\/\//g) || []).length >= 3) reasons.push('Several links in one message');
+  if (shouty) {
+    reasons.push('Mostly capital letters');
+    score += 0.2;
+  }
+  if ((body.match(/https?:\/\//g) || []).length >= 3) {
+    reasons.push('Several links in one message');
+    score += 0.25;
+  }
+  if ((body.match(/!/g) || []).length >= 3) {
+    reasons.push('Excessive exclamation marks');
+    score += 0.1;
+  }
 
-  const score = Math.min(1, reasons.length / 3);
-  return { score: Number(score.toFixed(2)), spam: score >= 0.66, reasons, category: reasons.length ? 'spam' : 'none' };
+  const finalScore = Math.min(1, score);
+  return {
+    score: Number(finalScore.toFixed(2)),
+    spam: finalScore >= 0.6 || highSeverity,
+    reasons,
+    category: reasons.length ? (category === 'none' ? 'spam' : category) : 'none',
+  };
 }
 
 // ---------------------------------------------------------------------------
