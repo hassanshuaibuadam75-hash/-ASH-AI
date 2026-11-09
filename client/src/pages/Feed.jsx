@@ -474,7 +474,7 @@ export default function Feed() {
         </div>
       ) : null}
 
-      <Composer onCreated={(post) => setPosts((prev) => [post, ...prev])} />
+      <Composer user={user} onCreated={(post) => setPosts((prev) => mergePosts([post, ...prev], []))} />
 
       {loading ? <Spinner label="Loading your feed" /> : null}
       {!loading && posts.length === 0 ? (
