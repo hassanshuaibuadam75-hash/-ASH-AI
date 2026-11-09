@@ -197,8 +197,7 @@ await check('reconnect: syncing replaces the placeholder with the server copy', 
     updatedAt: offlineCreatedAt,
   };
   // Exactly what flushOutbox does on a successful send.
-  const reconciled = reconcileSyncedPost(rows, offlineClientId, serverCopy);
-  await db5.cacheFeed(reconciled);
+  await db5.cacheSyncedPost(offlineClientId, serverCopy);
 
   const after = await db5.readFeed();
   assert.equal(after.length, 2, 'no duplicate row left behind');
