@@ -213,6 +213,28 @@ export const readProfile = async () => (await getRow(STORE.PROFILE, 'me'))?.user
 
 export const cacheFeed = (posts) => putRows(STORE.FEED, (posts || []).map((p) => ({ ...p, cachedAt: Date.now() })));
 export const deleteFeedRow = (id) => removeRow(STORE.FEED, id);
+
+/**
+ * Persist a post the server has just accepted.
+ *
+ * cacheFeed only upserts, so storing the server copy is not enough: the offline
+ * placeholder (`local:<clientId>`) would stay in IndexedDB and reappear after a reload
+ * as a second copy of the same post. This writes the server row and deletes exactly the
+ * rows reconciliation replaced.
+ */
+export async function cacheSyncedPost(clientId, serverPost) {
+  const rows = await getRows(STORE.FEED);
+  const reconciled = reconcileSyncedPost(rows, clientId, serverPost);
+  const keep = new Set(reconciled.map((r) => r.id));
+  for (const row of rows) {
+    if (row?.id && !keep.has(row.id)) {
+      // eslint-disable-next-line no-await-in-loop
+      await removeRow(STORE.FEED, row.id);
+    }
+  }
+  await cacheFeed(reconciled);
+  return reconciled;
+}
 export const readFeed = async () =>
   (await getRows(STORE.FEED)).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
 
