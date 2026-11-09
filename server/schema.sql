@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS users (
   permissions       TEXT NOT NULL DEFAULT '[]',           -- explicit admin grants (JSON array)
   is_founder        INTEGER NOT NULL DEFAULT 0,           -- immutable, single account
   public_key_jwk    TEXT,                                 -- X25519/ECDH public key for E2E messaging
+  is_verified_seller INTEGER NOT NULL DEFAULT 0,
   status            TEXT NOT NULL DEFAULT 'active',       -- active | restricted | suspended
   privacy           TEXT NOT NULL DEFAULT '{}',           -- JSON privacy settings
   created_at        TEXT NOT NULL,

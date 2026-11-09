@@ -19,6 +19,17 @@ db.pragma('foreign_keys = ON');
 db.pragma('busy_timeout = 5000');
 db.exec(fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8'));
 
+// Forward-only migrations for databases created by an earlier revision.
+function hasColumn(table, column) {
+  return db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
+}
+function migrate() {
+  if (!hasColumn('users', 'is_verified_seller')) {
+    db.exec('ALTER TABLE users ADD COLUMN is_verified_seller INTEGER NOT NULL DEFAULT 0');
+  }
+}
+migrate();
+
 export const uid = (prefix = '') => prefix + crypto.randomUUID().replace(/-/g, '');
 export const now = () => new Date().toISOString();
 
