@@ -81,6 +81,7 @@ Commission tiers (unchanged, as approved): ₦1–100,000 → 3% · ₦100,001�
 
 ## Documentation
 
+* [`docs/OFFLINE.md`](docs/OFFLINE.md) — offline-first data layer, sync API, nearby radio bridge
 * [`docs/FEATURES.md`](docs/FEATURES.md) — verified / unverified / external-dependency status
 * [`docs/TESTING.md`](docs/TESTING.md) — what the suite proves, and what it does not
 * [`docs/SECURITY.md`](docs/SECURITY.md) — auth, CSRF, RLS, encryption design, limits
