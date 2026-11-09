@@ -14,6 +14,9 @@ import chatRoutes from './routes-chat.js';
 import marketRoutes from './routes-market.js';
 import adminRoutes from './routes-admin.js';
 import aiRoutes from './routes-ai.js';
+import syncRoutes from './routes-sync.js';
+import contentRoutes from './routes-content.js';
+import heritageRoutes from './routes-heritage.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -73,6 +76,9 @@ app.use('/api', chatRoutes);
 app.use('/api', marketRoutes);
 app.use('/api', adminRoutes);
 app.use('/api', aiRoutes);
+app.use('/api', syncRoutes);
+app.use('/api', contentRoutes);
+app.use('/api', heritageRoutes);
 
 app.use('/api', (_req, res) => res.status(404).json({ error: 'not_found', message: 'API endpoint not found.' }));
 
