@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, formatTime } from '../api.js';
+import { cacheFeed, readFeed, enqueue, newClientId } from '../localdb.js';
 import { useAuth } from '../App.jsx';
 import { Avatar, ConfirmDialog, Empty, Field, Modal, Spinner, useToast, Badge } from '../ui.jsx';
 import ModelViewer from '../components/ModelViewer.jsx';
@@ -35,20 +36,50 @@ function Composer({ onCreated }) {
       return;
     }
     setBusy(true);
+    const clientId = newClientId();
     try {
       const form = new FormData();
       form.append('body', body.trim());
       form.append('audience', audience);
       form.append('kind', detectKind(file));
+      form.append('clientId', clientId);
       if (file) form.append('file', file);
       const data = await api('/posts', { method: 'POST', form });
       onCreated(data.post);
       setBody('');
       setFile(null);
       if (fileRef.current) fileRef.current.value = '';
-      toast.push('Posted.', 'success');
+      toast.push(data.duplicate ? 'Already posted.' : 'Posted.', 'success');
     } catch (err) {
-      toast.push(err.message, 'error');
+      // No connection: a text post is kept on this device and sent automatically.
+      const offline = !navigator.onLine || !err.status;
+      if (offline && !file) {
+        const createdAt = new Date().toISOString();
+        await enqueue({ clientId, type: 'post', body: body.trim(), audience, createdAt, attempts: 0 });
+        onCreated({
+          id: clientId,
+          clientId,
+          body: body.trim(),
+          kind: 'text',
+          audience,
+          mediaUrl: null,
+          createdAt,
+          updatedAt: createdAt,
+          edited: false,
+          author: { id: 'me', username: '', fullName: '' },
+          likedByMe: false,
+          counts: { likes: 0, comments: 0, shares: 0 },
+          isOwner: true,
+          pending: true,
+          transport: 'queued',
+        });
+        setBody('');
+        toast.push('Saved offline — will post automatically.', 'success');
+      } else if (offline) {
+        toast.push('Photos and videos need a connection. Your text can be saved offline without an attachment.', 'error');
+      } else {
+        toast.push(err.message, 'error');
+      }
     } finally {
       setBusy(false);
     }
@@ -391,14 +422,31 @@ export default function Feed() {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [cursor, setCursor] = useState(null);
+  const [offline, setOffline] = useState(false);
 
   const load = useCallback(async (nextCursor = null, append = false) => {
+    // Show what this device already has before touching the network.
+    if (!append) {
+      const cached = await readFeed();
+      if (cached.length) {
+        setPosts(cached.filter((post) => !post.deleted));
+        setLoading(false);
+      }
+    }
     try {
       const data = await api(`/feed${nextCursor ? `?before=${encodeURIComponent(nextCursor)}` : ''}`);
       setPosts((prev) => (append ? [...prev, ...(data.posts || [])] : data.posts || []));
       setCursor(data.nextCursor || null);
+      setOffline(false);
+      if (!append) await cacheFeed(data.posts || []);
     } catch (err) {
-      toast.push(err.message, 'error');
+      const cached = await readFeed();
+      if (cached.length) {
+        setPosts(cached.filter((post) => !post.deleted));
+        setOffline(true);
+      } else {
+        toast.push(err.message, 'error');
+      }
     } finally {
       setLoading(false);
     }
@@ -416,6 +464,15 @@ export default function Feed() {
         </div>
         <Link to={`/u/${user.username}`} className="btn ghost sm">View profile</Link>
       </div>
+
+      {offline ? (
+        <div className="card" style={{ borderColor: 'var(--ash-amber, #ffc857)' }}>
+          <strong className="small">Offline</strong>
+          <p className="small muted" style={{ margin: '4px 0 0' }}>
+            Showing posts saved on this device. New text posts are kept here and sent automatically when you are back online.
+          </p>
+        </div>
+      ) : null}
 
       <Composer onCreated={(post) => setPosts((prev) => [post, ...prev])} />
 
