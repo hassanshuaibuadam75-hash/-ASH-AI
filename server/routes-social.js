@@ -9,7 +9,7 @@ import {
 const router = express.Router();
 const AUDIENCES = ['public', 'friends', 'private'];
 
-function serializePost(row, viewerId) {
+export function serializePost(row, viewerId) {
   const author = db.prepare('SELECT * FROM users WHERE id = ?').get(row.author_id);
   const liked = db.prepare('SELECT 1 FROM post_likes WHERE post_id = ? AND user_id = ?').get(row.id, viewerId);
   const counts = {
@@ -111,6 +111,12 @@ router.post('/posts', requireAuth, rateLimit({ name: 'post', limit: 40, windowMs
   const body = clean(req.body.body, 5000);
   const audience = AUDIENCES.includes(req.body.audience) ? req.body.audience : 'public';
   const sharedPostId = clean(req.body.sharedPostId, 60) || null;
+  // Offline replay is idempotent: the same device id never creates a second post.
+  const clientId = clean(req.body.clientId, 80) || null;
+  if (clientId) {
+    const existing = db.prepare('SELECT * FROM posts WHERE author_id = ? AND client_id = ?').get(req.user.id, clientId);
+    if (existing) return res.status(200).json({ post: serializePost(existing, req.user.id), duplicate: true });
+  }
 
   if (!body && !req.file && !sharedPostId) {
     return badRequest(res, 'Write something or attach a file to publish.');
@@ -136,8 +142,8 @@ router.post('/posts', requireAuth, rateLimit({ name: 'post', limit: 40, windowMs
   }
 
   const id = uid('pst_');
-  db.prepare('INSERT INTO posts (id, author_id, body, kind, audience, media_id, shared_post_id, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)')
-    .run(id, req.user.id, body, kind, audience, media?.id || null, sharedPostId, now(), now());
+  db.prepare('INSERT INTO posts (id, author_id, body, kind, audience, media_id, shared_post_id, client_id, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)')
+    .run(id, req.user.id, body, kind, audience, media?.id || null, sharedPostId, clientId, now(), now());
 
   if (sharedPostId) {
     const original = db.prepare('SELECT author_id FROM posts WHERE id = ?').get(sharedPostId);

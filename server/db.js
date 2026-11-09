@@ -27,6 +27,12 @@ function migrate() {
   if (!hasColumn('users', 'is_verified_seller')) {
     db.exec('ALTER TABLE users ADD COLUMN is_verified_seller INTEGER NOT NULL DEFAULT 0');
   }
+  // Offline replay: a device-generated id makes post creation idempotent.
+  if (!hasColumn('posts', 'client_id')) {
+    db.exec('ALTER TABLE posts ADD COLUMN client_id TEXT');
+  }
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_posts_client ON posts(author_id, client_id) WHERE client_id IS NOT NULL');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_posts_updated ON posts(updated_at DESC)');
 }
 migrate();
 
