@@ -113,7 +113,21 @@ async function sendOutboxItem(item) {
 }
 
 export async function flushOutbox({ limit = 25 } = {}) {
-  if (!isOnline()) return { sent: 0, failed: 0, pending: (await listOutbox()).length, offline: true };
+  if (!isOnline()) {
+    // No internet: offer the queue to nearby peers (store-and-forward) and keep everything
+    // locally. Items stay in the outbox until the server actually accepts them, so a relay
+    // hand-off can never lose or duplicate an operation.
+    const queue = (await listOutbox()).slice(0, limit);
+    let relayed = 0;
+    try {
+      const result = await flushOutboxViaNearby(queue);
+      relayed = result?.relayed || 0;
+    } catch {
+      relayed = 0;
+    }
+    if (relayed) announce({ kind: 'nearby', relayed });
+    return { sent: 0, failed: 0, pending: (await listOutbox()).length, offline: true, relayed };
+  }
 
   const queue = (await listOutbox()).slice(0, limit);
   let sent = 0;
