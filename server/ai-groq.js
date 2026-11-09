@@ -12,7 +12,26 @@
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
-export const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+// Groq retires model ids over time (llama-3.3-70b-versatile is no longer served). An
+// explicit GROQ_MODEL always wins and is never silently substituted; otherwise we start
+// from a current model and may fall back to another live model if the default is retired.
+const EXPLICIT_MODEL = process.env.GROQ_MODEL || '';
+export const GROQ_MODEL = EXPLICIT_MODEL || 'openai/gpt-oss-20b';
+const FALLBACK_MODELS = ['openai/gpt-oss-120b', 'qwen/qwen3.8-27b'];
+
+/** Model ids to try, in order. */
+function modelCandidates() {
+  return EXPLICIT_MODEL ? [EXPLICIT_MODEL] : [GROQ_MODEL, ...FALLBACK_MODELS];
+}
+
+/** True when a provider error means "this model id is gone", not a real request failure. */
+function isRetiredModel(err) {
+  const text = String(err?.detail || err?.message || '');
+  return (
+    /model/i.test(text) &&
+    /(not found|does not exist|decommission|retired|no longer supported|invalid model|model_not_found)/i.test(text)
+  );
+}
 
 /** True when this deployment can actually reach Groq. */
 export function groqConfigured() {
