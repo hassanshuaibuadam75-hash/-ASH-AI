@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, timeAgo } from '../api.js';
+import { api, formatTime } from '../api.js';
 import { useAuth } from '../App.jsx';
 import { Avatar, ConfirmDialog, Empty, Field, Modal, Spinner, useToast, Badge } from '../ui.jsx';
 import ModelViewer from '../components/ModelViewer.jsx';
@@ -150,7 +150,7 @@ function Comments({ postId, onCountChange }) {
           <div className="grow">
             <div className="row" style={{ gap: 6 }}>
               <Link to={`/u/${c.author?.username}`} className="tiny" style={{ fontWeight: 700 }}>{c.author?.fullName}</Link>
-              <span className="tiny muted">{timeAgo(c.createdAt)}</span>
+              <span className="tiny muted">{formatTime(c.createdAt)}</span>
             </div>
             <div className="small" style={{ whiteSpace: 'pre-wrap' }}>{c.body}</div>
           </div>
@@ -257,7 +257,7 @@ function PostCard({ post, onChange, onRemoved }) {
             {post.author?.isVerifiedSeller ? <Badge tone="green">Verified seller</Badge> : null}
           </div>
           <div className="tiny muted">
-            @{post.author?.username} · {timeAgo(post.createdAt)}
+            @{post.author?.username} · {formatTime(post.createdAt)}
             {post.edited ? ' · edited' : ''} · {post.audience === 'private' ? 'Only me' : post.audience === 'friends' ? 'Friends' : 'Public'}
           </div>
         </div>

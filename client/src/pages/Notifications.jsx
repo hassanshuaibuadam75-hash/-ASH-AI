@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, timeAgo } from '../api.js';
+import { api, formatTime } from '../api.js';
 import { Avatar, Empty, Spinner, useToast } from '../ui.jsx';
 
 const LABELS = {
@@ -67,7 +67,7 @@ export default function Notifications() {
                 {n.actor ? <Link to={`/u/${n.actor.username}`} className="strong">{n.actor.fullName}</Link> : <span className="strong">#ash Mesh</span>}{' '}
                 {LABELS[n.type] || n.type.replaceAll('_', ' ')}
               </div>
-              <div className="muted small">{timeAgo(n.createdAt)}</div>
+              <div className="muted small">{formatTime(n.createdAt)}</div>
             </div>
             {n.entityType === 'post' && n.entityId ? <Link className="btn ghost sm" to={`/?post=${n.entityId}`}>View</Link> : null}
             {n.entityType === 'listing' && n.entityId ? <Link className="btn ghost sm" to={`/market/${n.entityId}`}>View</Link> : null}
