@@ -1,8 +1,8 @@
 // #ash Mesh — marketplace: listings, orders, commission, payments, seller verification.
 import crypto from 'node:crypto';
 import express from 'express';
-import { db, uid, now, parseJSON, toPublicUser, notify, audit, areFriends, isBlocked } from '../db.js';
-import { requireAuth, upload, saveMedia, rateLimit, clean, clampInt, badRequest, clientIp } from '../lib.js';
+import { db, uid, now, parseJSON, toPublicUser, notify, audit, areFriends, isBlocked } from './db.js';
+import { requireAuth, upload, saveMedia, rateLimit, clean, clampInt, badRequest, clientIp } from './lib.js';
 
 const router = express.Router();
 

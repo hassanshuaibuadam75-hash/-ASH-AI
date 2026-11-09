@@ -1,7 +1,7 @@
 // #ash Mesh — administration, moderation, audit and the exclusive Founder Dashboard.
 import express from 'express';
-import { db, now, parseJSON, toPublicUser, audit, notify } from '../db.js';
-import { requireAuth, requireFounder, rateLimit, clean, clampInt, badRequest, clientIp } from '../lib.js';
+import { db, now, parseJSON, toPublicUser, audit, notify } from './db.js';
+import { requireAuth, requireFounder, rateLimit, clean, clampInt, badRequest, clientIp } from './lib.js';
 
 const router = express.Router();
 

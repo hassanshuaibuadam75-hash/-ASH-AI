@@ -1,10 +1,10 @@
 // #ash Mesh — accounts, profiles, privacy, friends, notifications, blocks, reports.
 import express from 'express';
-import { db, uid, now, parseJSON, toPublicUser, notify, audit, areFriends, isBlocked, DEFAULT_PRIVACY } from '../db.js';
+import { db, uid, now, parseJSON, toPublicUser, notify, audit, areFriends, isBlocked, DEFAULT_PRIVACY } from './db.js';
 import {
   hashPassword, verifyPassword, createSession, destroySession, requireAuth, rateLimit,
   validateRegistration, clean, clientIp, saveMedia, upload, randomToken, sha256, badRequest,
-} from '../lib.js';
+} from './lib.js';
 
 const router = express.Router();
 

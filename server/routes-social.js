@@ -1,10 +1,10 @@
 // #ash Mesh — posts, media, likes, comments, shares.
 import express from 'express';
 import fs from 'node:fs';
-import { db, uid, now, parseJSON, toPublicUser, notify, audit, areFriends, isBlocked, postVisibility } from '../db.js';
+import { db, uid, now, parseJSON, toPublicUser, notify, audit, areFriends, isBlocked, postVisibility } from './db.js';
 import {
   requireAuth, upload, saveMedia, canAccessMedia, mediaAbsolutePath, rateLimit, clean, clampInt, badRequest, clientIp,
-} from '../lib.js';
+} from './lib.js';
 
 const router = express.Router();
 const AUDIENCES = ['public', 'friends', 'private'];

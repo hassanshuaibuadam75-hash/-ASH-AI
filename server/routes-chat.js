@@ -1,8 +1,8 @@
 // #ash Mesh — private messaging. The server stores AES-GCM ciphertext envelopes only;
 // it has no access to conversation keys or plaintext. Attachments are stored encrypted too.
 import express from 'express';
-import { db, uid, now, parseJSON, toPublicUser, notify, audit, isBlocked, areFriends, DEFAULT_PRIVACY } from '../db.js';
-import { requireAuth, upload, saveMedia, rateLimit, clean, clampInt, badRequest, clientIp } from '../lib.js';
+import { db, uid, now, parseJSON, toPublicUser, notify, audit, isBlocked, areFriends, DEFAULT_PRIVACY } from './db.js';
+import { requireAuth, upload, saveMedia, rateLimit, clean, clampInt, badRequest, clientIp } from './lib.js';
 
 const router = express.Router();
 

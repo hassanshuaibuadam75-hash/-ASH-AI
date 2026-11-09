@@ -2,8 +2,8 @@
 // The assistant only ever receives text the user explicitly submits. It has no access to
 // end-to-end encrypted messages, which the server cannot decrypt.
 import express from 'express';
-import { db, uid, now } from '../db.js';
-import { requireAuth, rateLimit, clean, badRequest } from '../lib.js';
+import { db, uid, now } from './db.js';
+import { requireAuth, rateLimit, clean, badRequest } from './lib.js';
 
 const router = express.Router();
 
