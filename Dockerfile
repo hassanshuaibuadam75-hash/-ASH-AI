@@ -3,15 +3,15 @@
 # dependencies are pruned before the runtime layer. Only the paths the server actually needs are
 # copied, so a host node_modules directory can never leak into the build.
 #
-# Base is Node 24 LTS on Debian 13 (trixie). Debian 12 (bookworm) still ships glibc 2.36,
-# zlib 1.2.13, acl 2.3.1 and gcc-12, which carry high/critical advisories with no fix published
-# for that release; trixie ships the fixed/current versions instead.
-FROM node:24-trixie-slim AS build
+# Base is Node 24 LTS on Alpine (musl). Debian bases were rejected by the image security gate:
+# Debian 12 and 13 both ship glibc carrying DEBIAN-CVE-2019-1010022 (a disputed advisory Debian
+# does not fix) plus acl/attr/gcc advisories with no fixed version, so no Debian release can pass.
+# Alpine has no glibc, acl, attr or gcc packages in the runtime layer.
+FROM node:24-alpine AS build
 
-RUN apt-get update \
- && apt-get -y upgrade \
- && apt-get install -y --no-install-recommends python3 make g++ ca-certificates \
- && rm -rf /var/lib/apt/lists/*
+# Toolchain for the one native module (better-sqlite3 has no musl prebuild, so node-gyp compiles it).
+RUN apk upgrade --no-cache \
+ && apk add --no-cache python3 make g++
 
 WORKDIR /app
 
@@ -27,13 +27,11 @@ COPY client ./client
 RUN npm run build \
  && npm prune --omit=dev
 
-FROM node:24-trixie-slim AS runtime
+FROM node:24-alpine AS runtime
 
-# Distributor security fixes for the runtime OS packages, then keep the image lean.
-RUN apt-get update \
- && apt-get -y upgrade \
- && apt-get install -y --no-install-recommends libstdc++6 ca-certificates \
- && rm -rf /var/lib/apt/lists/*
+# libstdc++ is required by the compiled better-sqlite3 addon; ca-certificates for outbound TLS.
+RUN apk upgrade --no-cache \
+ && apk add --no-cache libstdc++ ca-certificates
 
 ENV NODE_ENV=production \
     PORT=3000 \
