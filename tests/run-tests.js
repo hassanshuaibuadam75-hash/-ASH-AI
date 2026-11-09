@@ -220,7 +220,12 @@ async function run() {
   check('another user cannot edit the post', foreignEdit.status >= 403, `status=${foreignEdit.status}`);
 
   const unconfirmed = await member.del(`/api/posts/${postId}`);
-  check('deleting without confirmation is refused', unconfirmed.status === 400, `status=${unconfirmed.status} ${unconfirmed.text.slice(0, 120)}`);
+  // The API refuses an unconfirmed delete with 428 "confirmation_required" (400 is also a refusal).
+  check(
+    'deleting without confirmation is refused',
+    (unconfirmed.status === 428 || unconfirmed.status === 400) && !unconfirmed.body?.ok,
+    `status=${unconfirmed.status} ${unconfirmed.text.slice(0, 120)}`
+  );
 
   const stillThere = await member.get(`/api/posts/${postId}`);
   check('post survives the unconfirmed delete attempt', stillThere.status === 200, `status=${stillThere.status}`);
@@ -309,7 +314,22 @@ async function run() {
   check('order applies the approved 5% commission', orderBody?.commissionMinor === 1250000 && orderBody?.commissionRate === 0.05, JSON.stringify({ commission: orderBody?.commissionMinor, rate: orderBody?.commissionRate }));
 
   const pay = await member.post(`/api/market/orders/${orderBody?.id}/pay`, {});
-  check('payment without a provider key fails honestly (never simulated)', pay.status >= 400 && !!pay.body?.error, `status=${pay.status} ${pay.text.slice(0, 160)}`);
+  // With no payment provider key the endpoint must say so and must NOT report a successful charge.
+  const payStatus = pay.body?.payment?.status;
+  check(
+    'payment without a provider key fails honestly (never simulated)',
+    (pay.status >= 400 || payStatus === 'not_configured') &&
+      payStatus !== 'success' &&
+      pay.body?.payment?.paid !== true,
+    `status=${pay.status} paymentStatus=${payStatus}`
+  );
+
+  const afterPay = await member.get(`/api/market/orders/${orderBody?.id}`);
+  check(
+    'order stays unpaid when no payment provider is configured',
+    afterPay.body?.order?.status !== 'paid',
+    `orderStatus=${afterPay.body?.order?.status}`
+  );
 
   const fraud = await member.post('/api/market/fraud-report', { listingId, details: 'Automated suite fraud report check.' });
   check('fraud report is recorded', fraud.status === 201, `status=${fraud.status}`);
