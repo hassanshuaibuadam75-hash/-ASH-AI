@@ -22,7 +22,7 @@ function detectKind(file) {
   return 'file';
 }
 
-function Composer({ onCreated }) {
+function Composer({ onCreated, user }) {
   const toast = useToast();
   const [body, setBody] = useState('');
   const [audience, setAudience] = useState('public');
