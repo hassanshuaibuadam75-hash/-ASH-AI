@@ -11,7 +11,7 @@
     "build": "vite build --config client/vite.config.js",
     "start": "node server/index.js",
     "dev": "node server/index.js",
-    "test": "node tests/run-tests.js",
+    "test": "node tests/run-tests.js && node tests/offline-feed.test.mjs",
     "postinstall": "node scripts/check-native.js"
   },
   "dependencies": {
