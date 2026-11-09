@@ -80,6 +80,7 @@ CREATE TABLE IF NOT EXISTS posts (
   audience       TEXT NOT NULL DEFAULT 'public',-- public | friends | private
   media_id       TEXT REFERENCES media(id) ON DELETE SET NULL,
   shared_post_id TEXT REFERENCES posts(id) ON DELETE SET NULL,
+  client_id      TEXT,                          -- device-generated id for offline replay
   created_at     TEXT NOT NULL,
   updated_at     TEXT NOT NULL,
   deleted_at     TEXT
@@ -294,3 +295,78 @@ CREATE TABLE IF NOT EXISTS rate_events (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_rate_key ON rate_events(key, created_at);
+
+
+-- ============================ Offline-first support ============================
+-- A post may be created while the device is offline. The client sends a stable
+-- client_id, so replaying the outbox can never create a duplicate post.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_posts_client ON posts(author_id, client_id)
+  WHERE client_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_posts_updated ON posts(updated_at DESC);
+
+-- ============================== #ash Academy ==================================
+CREATE TABLE IF NOT EXISTS academy_courses (
+  id             TEXT PRIMARY KEY,
+  author_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title          TEXT NOT NULL,
+  summary        TEXT NOT NULL DEFAULT '',
+  category       TEXT NOT NULL DEFAULT 'general',
+  language       TEXT NOT NULL DEFAULT 'en',
+  level          TEXT NOT NULL DEFAULT 'beginner',   -- beginner | intermediate | advanced
+  cover_media_id TEXT REFERENCES media(id) ON DELETE SET NULL,
+  published      INTEGER NOT NULL DEFAULT 1,
+  created_at     TEXT NOT NULL,
+  updated_at     TEXT NOT NULL,
+  deleted_at     TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_academy_updated ON academy_courses(updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS academy_lessons (
+  id               TEXT PRIMARY KEY,
+  course_id        TEXT NOT NULL REFERENCES academy_courses(id) ON DELETE CASCADE,
+  position         INTEGER NOT NULL DEFAULT 0,
+  title            TEXT NOT NULL,
+  body             TEXT NOT NULL DEFAULT '',
+  media_id         TEXT REFERENCES media(id) ON DELETE SET NULL,
+  duration_minutes INTEGER,
+  created_at       TEXT NOT NULL,
+  updated_at       TEXT NOT NULL,
+  deleted_at       TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_lessons_course ON academy_lessons(course_id, position);
+
+CREATE TABLE IF NOT EXISTS academy_enrollments (
+  course_id           TEXT NOT NULL REFERENCES academy_courses(id) ON DELETE CASCADE,
+  user_id             TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  completed_lesson_ids TEXT NOT NULL DEFAULT '[]',
+  progress            INTEGER NOT NULL DEFAULT 0,
+  created_at          TEXT NOT NULL,
+  updated_at          TEXT NOT NULL,
+  PRIMARY KEY (course_id, user_id)
+);
+
+-- ============================== #ash Heritage =================================
+CREATE TABLE IF NOT EXISTS heritage_entries (
+  id         TEXT PRIMARY KEY,
+  author_id  TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title      TEXT NOT NULL,
+  body       TEXT NOT NULL DEFAULT '',
+  category   TEXT NOT NULL DEFAULT 'story',  -- story | language | craft | music | history | recipe
+  region     TEXT,
+  country    TEXT,
+  language   TEXT,
+  media_id   TEXT REFERENCES media(id) ON DELETE SET NULL,
+  published  INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  deleted_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_heritage_updated ON heritage_entries(updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS heritage_reactions (
+  entry_id   TEXT NOT NULL REFERENCES heritage_entries(id) ON DELETE CASCADE,
+  user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind       TEXT NOT NULL DEFAULT 'respect',
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (entry_id, user_id, kind)
+);
