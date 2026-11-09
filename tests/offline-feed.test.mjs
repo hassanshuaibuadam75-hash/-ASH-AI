@@ -211,10 +211,9 @@ await check('replayed sync (duplicate prevention) still yields exactly one copy'
   const db6 = await boot('replay');
   const rows = await db6.readFeed();
   const serverCopy = rows.find((r) => r.clientId === offlineClientId);
-  const once = reconcileSyncedPost(rows, offlineClientId, serverCopy);
-  const twice = reconcileSyncedPost(once, offlineClientId, serverCopy);
-  const thrice = mergePosts(twice, [serverCopy]);
-  await db6.cacheFeed(thrice);
+  await db6.cacheSyncedPost(offlineClientId, serverCopy);
+  await db6.cacheSyncedPost(offlineClientId, serverCopy); // replayed send
+  await db6.cacheFeed(mergePosts(await db6.readFeed(), [serverCopy]));
 
   const after = await db6.readFeed();
   assert.equal(after.filter((r) => r.clientId === offlineClientId).length, 1);
