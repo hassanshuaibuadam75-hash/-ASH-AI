@@ -229,8 +229,9 @@ router.post('/users/me/cover', requireAuth, upload.single('file'), (req, res) =>
 });
 
 // E2E public key registration (private key never leaves the device).
+// Accepts the JWK under `publicKey`; `publicKeyJwk` is kept as an alias for older clients.
 router.put('/users/me/public-key', requireAuth, (req, res) => {
-  const jwk = req.body.publicKey;
+  const jwk = req.body.publicKey || req.body.publicKeyJwk;
   if (!jwk || jwk.kty !== 'EC' || jwk.crv !== 'P-256' || !jwk.x || !jwk.y) {
     return badRequest(res, 'A valid P-256 public key is required.');
   }
