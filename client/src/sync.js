@@ -185,7 +185,9 @@ export async function pullChanges() {
 
   if (data.posts?.length) {
     const local = await readFeed();
-    await cacheFeed(mergeById(local, data.posts));
+    // mergePosts keys on clientId, so a pulled post replaces the offline placeholder it
+    // came from instead of appearing next to it as a second row.
+    await cacheFeed(mergePosts(local, data.posts));
   }
   if (data.threads?.length) await cacheThreads(data.threads);
   if (data.academy?.length) await cacheAcademy(data.academy);
