@@ -212,6 +212,7 @@ export const cacheProfile = (user) => putRow(STORE.PROFILE, { key: 'me', user, a
 export const readProfile = async () => (await getRow(STORE.PROFILE, 'me'))?.user || null;
 
 export const cacheFeed = (posts) => putRows(STORE.FEED, (posts || []).map((p) => ({ ...p, cachedAt: Date.now() })));
+export const deleteFeedRow = (id) => removeRow(STORE.FEED, id);
 export const readFeed = async () =>
   (await getRows(STORE.FEED)).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
 
