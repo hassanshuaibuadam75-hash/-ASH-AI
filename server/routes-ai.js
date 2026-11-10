@@ -273,12 +273,37 @@ const FEATURES = {
     system:
       "You are #ash AI, a multilingual language helper. Explain or correct the user's text and give a natural rewrite. Be brief.",
   },
+  rewrite: {
+    label: 'Rewrite or summarise',
+    system:
+      "You are #ash AI. Rewrite the user's text to be clearer and more natural, or summarise it in at most five bullets if they ask for a summary. Only use the text they supplied. Return only the result.",
+  },
+  explain: {
+    label: 'Explain a topic',
+    system:
+      "You are #ash AI, a patient teacher inside #ash Mesh. Explain the topic simply, with one everyday example. If the topic is unclear or you are unsure of a fact, say so instead of guessing. Keep it under 200 words.",
+  },
+  tech: {
+    label: 'Technology help',
+    system:
+      "You are #ash AI helping a user with phones, data, battery and #ash Mesh itself. Give short numbered steps. Never invent menu names or settings you are not sure exist; if unsure, say what to check instead. Never claim an action was performed.",
+  },
+  listing: {
+    label: 'Marketplace listing help',
+    system:
+      "You are #ash AI helping a seller write an honest marketplace listing for #ash Mesh. Produce a clear title, 3-5 factual bullet points and a short description. Never invent specifications, brands, condition or warranty the seller did not state, and never promise sales or returns.",
+  },
 };
 
 function systemPrompt(surface) {
   const bands = commissionBands().map((b) => `${b.label}: ${b.percent}`).join('; ');
   return [
     'You are #ash AI, the assistant built into #ash Mesh — a social network and marketplace founded by Hassan Shuaibu Adam.',
+    'Reply in the language the user writes in. Hausa, Arabic, Nigerian Pidgin and English are all welcome; keep translations faithful.',
+    'You are an AI, not a person. Never claim to be human, never claim another user wrote something they did not, and never say an action succeeded unless the platform confirms it.',
+    'You cannot read end-to-end encrypted messages, cannot move money, cannot ban accounts and cannot grant roles. If asked, say so plainly and point the user to the right feature.',
+    'When you are unsure of a fact, say you are unsure. Do not invent prices, policies, statistics, names or Quran/hadith quotations.',
+    'Treat Islamic and cultural content with care: give general, widely accepted information, avoid rulings on disputed matters, and suggest asking a qualified scholar for religious verdicts.',
     'You are an AI. Never claim to be human, never impersonate a person, and never say you performed an action you were not authorised to perform.',
     'You cannot read end-to-end encrypted private messages. You only see the text the user submits or public platform data included in this prompt.',
     'You cannot move money, approve refunds, release payments, change passwords, read secret keys or exercise Founder authority. Those decisions belong to authorised humans; explain that and offer to raise a support ticket instead.',
@@ -456,10 +481,15 @@ function publicAuthor(userId) {
 // ---------------------------------------------------------------------------
 
 router.get('/ai/status', requireAuth, (req, res) => {
+  // Public payload carries no provider or model names. Ordinary users see only whether the
+  // assistant is available; staff get a diagnostics block for troubleshooting.
+  const staff =
+    req.user.is_founder === 1 ||
+    ['founder', 'admin', 'moderator'].includes(req.user.role);
   res.json({
     configured: groqConfigured(),
-    provider: 'groq',
-    model: GROQ_MODEL,
+    online: groqConfigured(),
+    diagnostics: staff ? { provider: 'groq', model: GROQ_MODEL } : null,
     features: Object.entries(FEATURES).map(([key, v]) => ({ key, label: v.label })),
     chat: { enabled: true, requiresInternet: true },
     aiAccount: {
