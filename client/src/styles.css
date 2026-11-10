@@ -143,7 +143,43 @@ img { max-width: 100%; display: block; }
   border-color: var(--accent-soft); box-shadow: 0 0 0 3px rgba(53, 255, 139, 0.12);
 }
 .textarea { resize: vertical; min-height: 88px; line-height: 1.55; }
-.input::placeholder, .textarea::placeholder { color: #5d7367; }
+.input::placeholder, .textarea::placeholder { color: #6f8a7c; opacity: 1; }
+
+/* ---------- Global form controls ----------
+   Bare <input>/<select>/<textarea> elements were unstyled, so some screens rendered a
+   light control with light text (invisible typing) and native white <option> lists.
+   These rules apply the dark design system to every control, classed or not. */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+textarea,
+select {
+  background: #08120c; color: var(--text); border: 1px solid var(--line);
+  border-radius: 11px; padding: 10px 12px; caret-color: var(--accent);
+  outline: none; color-scheme: dark;
+}
+input:not([type="checkbox"]):not([type="radio"]):focus,
+textarea:focus,
+select:focus {
+  border-color: var(--accent-soft); box-shadow: 0 0 0 3px rgba(53, 255, 139, 0.12);
+}
+input::placeholder, textarea::placeholder { color: #6f8a7c; opacity: 1; }
+select option, select optgroup { background: #08120c; color: var(--text); }
+input:-webkit-autofill, input:-webkit-autofill:hover, input:-webkit-autofill:focus,
+textarea:-webkit-autofill {
+  -webkit-text-fill-color: var(--text);
+  -webkit-box-shadow: 0 0 0 1000px #08120c inset;
+  transition: background-color 9999s ease-out 0s;
+}
+input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); width: auto; padding: 0; }
+input[type="file"] { color: var(--text); }
+
+/* ---------- Menu list ---------- */
+.menu-list { display: flex; flex-direction: column; gap: 2px; }
+.menu-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 11px 6px; border-bottom: 1px solid var(--line); color: var(--text);
+}
+.menu-row:last-child { border-bottom: 0; }
+.menu-row:hover { background: var(--card-2); border-radius: 10px; }
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 

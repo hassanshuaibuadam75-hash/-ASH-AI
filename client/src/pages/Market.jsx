@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api, formatTime, naira } from '../api.js';
+import { pct } from '../format.js';
 import { useAuth } from '../App.jsx';
 import { Avatar, Badge, ConfirmDialog, Empty, Field, Modal, Spinner, useToast } from '../ui.jsx';
 
@@ -276,7 +277,7 @@ export default function Market() {
                   {tiers.map((tier) => (
                     <tr key={tier.label}>
                       <td>{tier.label}</td>
-                      <td>{tier.rate}%</td>
+                      <td>{pct(tier.rate)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -297,7 +298,7 @@ export default function Market() {
                   {order.role === 'buyer' ? `Seller @${order.seller?.username}` : `Buyer @${order.buyer?.username}`} · {formatTime(order.createdAt)}
                 </div>
                 <div className="tiny muted">
-                  {naira(order.amountMinor)} · commission {naira(order.commissionMinor)} ({order.commissionRate}%) · payout {naira(order.payoutMinor)}
+                  {naira(order.amountMinor)} · commission {naira(order.commissionMinor)} ({pct(order.commissionRate)}) · payout {naira(order.payoutMinor)}
                 </div>
               </div>
               <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
@@ -444,7 +445,7 @@ export default function Market() {
           ) : null}
           {detail.commissionPreview ? (
             <p className="tiny muted" style={{ marginTop: 10 }}>
-              Buyer pays {naira(detail.priceMinor)}. Platform commission {naira(detail.commissionPreview.commissionMinor)} ({detail.commissionPreview.rate}%),
+              Buyer pays {naira(detail.priceMinor)}. Platform commission {naira(detail.commissionPreview.commissionMinor)} ({pct(detail.commissionPreview.rate)}),
               seller receives {naira(detail.commissionPreview.payoutMinor)}.
             </p>
           ) : null}
