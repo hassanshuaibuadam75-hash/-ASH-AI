@@ -370,10 +370,9 @@ export default function AI() {
         <div className="row" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
           <h2 style={{ margin: 0 }}>#ash AI</h2>
           <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
-            <Badge tone={status.configured ? 'green' : 'amber'}>
-              {status.configured ? `Connected · ${status.model}` : 'Not connected'}
+            <Badge tone={status.configured && online ? 'green' : 'amber'}>
+              {status.configured && online ? '#ash AI · Online' : '#ash AI · Offline'}
             </Badge>
-            <Badge tone={online ? 'green' : 'amber'}>{online ? 'Online' : 'Offline'}</Badge>
             {queueCount ? <Badge tone="amber">{queueCount} queued</Badge> : null}
             <Badge tone="grey">AI · not a human</Badge>
           </div>

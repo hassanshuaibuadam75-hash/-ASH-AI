@@ -2,6 +2,7 @@
 import express from 'express';
 import fs from 'node:fs';
 import { db, uid, now, parseJSON, toPublicUser, notify, audit, areFriends, isBlocked, postVisibility } from './db.js';
+import { screenContent } from './moderation.js';
 import {
   requireAuth, upload, saveMedia, canAccessMedia, mediaAbsolutePath, rateLimit, clean, clampInt, badRequest, clientIp,
 } from './lib.js';
@@ -41,7 +42,9 @@ export function serializePost(row, viewerId) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     edited: row.updated_at !== row.created_at,
-    author: toPublicUser(author, viewerId),
+    author: { ...toPublicUser(author, viewerId), isAi: !!author.is_ai },
+    aiGenerated: !!row.ai_generated,
+    moderationStatus: row.moderation_status || 'visible',
     likedByMe: !!liked,
     counts,
     sharedPost: shared,
@@ -78,6 +81,11 @@ router.get('/feed', requireAuth, (req, res) => {
     where += ' AND p.created_at < ?';
     params.push(cursor);
   }
+
+  // Quarantined or removed content is hidden from everyone except its author (who sees a
+  // notice) and staff, who decide in the moderation queue. Nothing is deleted.
+  where += " AND (p.moderation_status IS NULL OR p.moderation_status = 'visible' OR p.author_id = ?)";
+  params.push(req.user.id);
 
   const rows = db.prepare(
     `SELECT p.* FROM posts p WHERE ${where} ORDER BY p.created_at DESC LIMIT ?`
