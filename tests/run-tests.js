@@ -635,6 +635,43 @@ async function run() {
     `status=${marketHelp.status} ${marketHelp.text.slice(0, 160)}`
   );
 
+  /* ---- persistent @ashai thread ---- */
+  const threadMarker = `persist-${Date.now()}`;
+  const threadClientId = `t-${Date.now()}`;
+  const firstSend = await member.post('/api/ai/thread/messages', { content: threadMarker, clientId: threadClientId });
+  check(
+    'assistant thread stores the user message',
+    [200, 201, 502, 503].includes(firstSend.status) && firstSend.body?.userMessage?.content === threadMarker,
+    `status=${firstSend.status} ${JSON.stringify(firstSend.body).slice(0, 200)}`
+  );
+
+  const retrySend = await member.post('/api/ai/thread/messages', { content: threadMarker, clientId: threadClientId });
+  check(
+    'assistant thread is idempotent per client id',
+    retrySend.status === 200 && retrySend.body?.duplicate === true,
+    `status=${retrySend.status} ${JSON.stringify(retrySend.body).slice(0, 160)}`
+  );
+
+  const threadRead = await member.get('/api/ai/thread');
+  const stored = (threadRead.body?.messages || []).filter((m) => m.content === threadMarker);
+  check(
+    'assistant conversation is restored from the server exactly once',
+    threadRead.status === 200 && stored.length === 1 && stored[0].role === 'user',
+    `status=${threadRead.status} copies=${stored.length}`
+  );
+  check(
+    'assistant thread survives a fresh request (navigation/reload)',
+    threadRead.status === 200 && Array.isArray(threadRead.body?.messages) && threadRead.body.messages.length >= 1,
+    JSON.stringify(threadRead.body).slice(0, 160)
+  );
+
+  const anonThread = new Client('anon-thread');
+  const anonRead = await anonThread.get('/api/ai/thread');
+  check('assistant thread is private to its owner', anonRead.status === 401, `status=${anonRead.status}`);
+
+  const { pct } = await import('../client/src/format.js');
+  check('commission rates display as approved percentages', pct(0.03) === '3%' && pct(0.05) === '5%' && pct(0.025) === '2.5%' && pct(0.02) === '2%', `${pct(0.03)} ${pct(0.05)} ${pct(0.025)} ${pct(0.02)}`);
+
   /* ---- logout ---- */
   const logout = await founder.post('/api/auth/logout', {});
   check('logout succeeds', logout.status === 200, `status=${logout.status}`);
