@@ -124,7 +124,7 @@ const author = new Client('author');
 const observer = new Client('observer');
 
 const THREAT_TEXT = 'I will kill you and you should die tonight';
-const BORDERLINE_TEXT = 'This is an original copy of a designer bag';
+const BORDERLINE_TEXT = 'Selling a replica rolex watch, message me for details';
 const CLEAN_TEXT = 'Sharing photos from the Kano tech meetup this weekend — great turnout.';
 
 async function run() {
@@ -238,6 +238,15 @@ async function run() {
   check('review records why it was flagged', (review?.reasons || []).length > 0, JSON.stringify(review?.reasons));
   check('queue reports the real thresholds', queue.body?.thresholds?.quarantine === 0.85, JSON.stringify(queue.body?.thresholds));
 
+  /* -------------------------------- appeals ------------------------------ */
+  const appeal = await author.post(`/api/moderation/reviews/${review.id}/appeal`, { message: 'This was a quote from a film, please re-check.' });
+  check('author can appeal an open decision', appeal.status === 201 && !!appeal.body?.appeal, `${appeal.status} ${appeal.text.slice(0, 160)}`);
+  const dupe = await author.post(`/api/moderation/reviews/${review.id}/appeal`, { message: 'Sending the same appeal again.' });
+  check('duplicate appeals are prevented', dupe.status === 200 && dupe.body?.duplicate === true, `${dupe.status} ${dupe.text.slice(0, 160)}`);
+
+  const otherAppeal = await observer.post(`/api/moderation/reviews/${review.id}/appeal`, { message: 'Not my content.' });
+  check('only the author can appeal their content', otherAppeal.status === 403, `status=${otherAppeal.status}`);
+
   /* ---------------------------- human decision --------------------------- */
   const decide = await founder.post(`/api/moderation/reviews/${review.id}/decide`, {
     action: 'approve', note: 'Context reviewed by moderator',
@@ -251,14 +260,8 @@ async function run() {
     'approve must publish it back'
   );
 
-  /* -------------------------------- appeals ------------------------------ */
-  const appeal = await author.post(`/api/moderation/reviews/${review.id}/appeal`, { message: 'This was a quote from a film, please re-check.' });
-  check('author can appeal a decision', appeal.status === 201 && !!appeal.body?.appeal, `${appeal.status} ${appeal.text.slice(0, 160)}`);
-  const dupe = await author.post(`/api/moderation/reviews/${review.id}/appeal`, { message: 'Sending the same appeal again.' });
-  check('duplicate appeals are prevented', dupe.status === 200 && dupe.body?.duplicate === true, `${dupe.status} ${dupe.text.slice(0, 160)}`);
-
-  const otherAppeal = await observer.post(`/api/moderation/reviews/${review.id}/appeal`, { message: 'Not my content.' });
-  check('only the author can appeal their content', otherAppeal.status === 403, `status=${otherAppeal.status}`);
+  const closedAppeal = await author.post(`/api/moderation/reviews/${review.id}/appeal`, { message: 'Any update on this?' });
+  check('a decided review cannot be appealed again', closedAppeal.status === 409, `status=${closedAppeal.status}`);
 
   /* --------------------------- no automatic bans ------------------------- */
   const afterFlag = await author.post('/api/posts', { body: 'A normal follow-up post from the same account.', audience: 'public' });
