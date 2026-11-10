@@ -280,6 +280,17 @@ export default function Messages() {
           <strong>Messages</strong>
           {queuedCount ? <Badge tone="amber">{queuedCount} queued</Badge> : null}
         </div>
+        {/* Official assistant first, always. This opens the real #ash AI assistant rather
+            than pretending to be a private conversation with a person. */}
+        <a href="/ai" className="conv-item pinned-ai">
+          <span className="avatar ai-avatar" aria-hidden="true">✦</span>
+          <span className="conv-meta">
+            <span className="conv-name">#ash AI</span>
+            <span className="tiny muted">Official assistant · AI</span>
+          </span>
+          <Badge tone="green">AI</Badge>
+        </a>
+
         {conversations.length === 0 ? (
           <p className="muted small">No conversations yet. Open a profile and choose “Message”.</p>
         ) : null}

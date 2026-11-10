@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
 import { Field, Spinner, useToast, Badge } from '../ui.jsx';
 import * as aiQueue from '../aiQueue.js';
+import { OfficialPublisher, ModerationPanel } from '../components/ModerationPanel.jsx';
 
 const LANGUAGES = [
   ['English', 'English'], ['Hausa', 'Hausa'], ['Igbo', 'Igbo'], ['Yoruba', 'Yoruba'],
@@ -383,6 +384,8 @@ export default function AI() {
         </p>
       </div>
 
+      <ModerationPanel />
+
       {!status.configured ? (
         <div className="banner warn">
           <strong>#ash AI is not connected on this deployment.</strong> No simulated answers are produced. The
@@ -420,6 +423,8 @@ export default function AI() {
             </button>
           ) : null}
         </div>
+
+        {tab === 'staff' ? <OfficialPublisher /> : null}
 
         {tab === 'chat' ? (
           <div className="stack" style={{ marginTop: 14 }}>

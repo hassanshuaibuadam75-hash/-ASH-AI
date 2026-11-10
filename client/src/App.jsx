@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { Routes, Route, NavLink, Navigate, useLocation, useNavigate } from 'react-router-dom';
-import { api } from './api.js';
+import AssistantFab from './components/AssistantFab.jsx';
 import { ensureIdentity } from './crypto.js';
 import { readCapabilities, describeCapabilities } from './uar.js';
 import { Avatar, ToastProvider, useToast, NetworkChip, Spinner } from './ui.jsx';
@@ -248,6 +248,7 @@ function Shell() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
         <MobileNav unread={unread} />
+        <AssistantFab />
       </div>
     </div>
   );

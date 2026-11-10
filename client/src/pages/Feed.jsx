@@ -285,10 +285,19 @@ function PostCard({ post, onChange, onRemoved }) {
         <div className="grow" style={{ minWidth: 0 }}>
           <div className="row" style={{ gap: 6 }}>
             <Link to={`/u/${post.author?.username}`} style={{ fontWeight: 700 }}>{post.author?.fullName}</Link>
+            {post.author?.isAi ? <Badge tone="green">#ash AI · verified</Badge> : null}
+            {post.aiGenerated && !post.author?.isAi ? <Badge tone="grey">AI-generated</Badge> : null}
             {post.author?.isVerifiedSeller ? <Badge tone="green">Verified seller</Badge> : null}
           </div>
           <div className="tiny muted">
             @{post.author?.username} · {formatTime(post.createdAt)}
+            {post.moderationStatus && post.moderationStatus !== 'visible' ? (
+              <div className="banner warn tiny" style={{ marginTop: 8 }}>
+                {post.moderationStatus === 'quarantined'
+                  ? 'Hidden from other people while a moderator reviews this post. You can appeal in #ash AI → Safety.'
+                  : 'This post was hidden by a moderator. You can appeal in #ash AI → Safety.'}
+              </div>
+            ) : null}
             {post.edited ? ' · edited' : ''} · {post.audience === 'private' ? 'Only me' : post.audience === 'friends' ? 'Friends' : 'Public'}
           </div>
         </div>
