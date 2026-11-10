@@ -66,6 +66,14 @@ app.use(
 app.use(express.urlencoded({ extended: false, limit: '1mb' }));
 app.use(cookieParser());
 app.use(loadSession);
+
+// Authenticated JSON must never be cached. Without this, a browser or intermediary can
+// replay a stored anonymous {"user":null} to a signed-in user, who then lands on the
+// sign-in screen after a reload even though the session is still valid.
+app.use('/api', (_req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  next();
+});
 app.use(csrfProtection);
 
 app.get('/api/health', (_req, res) => {

@@ -17,6 +17,9 @@ export class ApiError extends Error {
 export async function api(path, options = {}) {
   const { method = 'GET', body, form, headers = {}, raw = false } = options;
   const init = { method, credentials: 'same-origin', headers: { ...headers } };
+  // Session state must never be answered from the HTTP cache: a stored anonymous
+  // {"user":null} would otherwise look like a signed-out user after a reload.
+  if (method === 'GET' || method === 'HEAD') init.cache = 'no-store';
   if (method !== 'GET' && method !== 'HEAD') init.headers['x-csrf-token'] = readCookie(CSRF_COOKIE);
   if (form) {
     init.body = form;
