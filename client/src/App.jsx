@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Routes, Route, NavLink, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import AssistantFab from './components/AssistantFab.jsx';
 import { ensureIdentity } from './crypto.js';
@@ -21,30 +21,75 @@ import Heritage from './pages/Heritage.jsx';
 const AuthCtx = createContext(null);
 export const useAuth = () => useContext(AuthCtx);
 
+// Offline-first session: the last confirmed account is kept on the device so a slow or
+// unavailable boot check cannot throw a signed-in user back to the sign-in screen.
+const SESSION_CACHE = 'ash_mesh_session_user';
+
+function readCachedUser() {
+  try {
+    const raw = localStorage.getItem(SESSION_CACHE);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && parsed.id && parsed.username ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedUser(user) {
+  try {
+    if (user) localStorage.setItem(SESSION_CACHE, JSON.stringify(user));
+    else localStorage.removeItem(SESSION_CACHE);
+  } catch {
+    /* storage unavailable (private mode) — session still works for this page */
+  }
+}
+
 function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const userRef = useRef(null);
   const toast = useToast();
+
+  const applyUser = useCallback((next) => {
+    userRef.current = next || null;
+    setUser(next || null);
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
       const data = await api('/auth/me');
-      setUser(data.user || null);
-      return data.user || null;
+      const next = data.user || null;
+      applyUser(next);
+      return next;
     } catch {
-      setUser(null);
-      return null;
+      // A failed check is not a sign-out: keep whatever this device already knows.
+      return userRef.current;
     }
-  }, []);
+  }, [applyUser]);
 
   useEffect(() => {
     let alive = true;
     (async () => {
-      await refresh();
-      if (alive) setLoading(false);
+      const cached = readCachedUser();
+      if (cached && alive) applyUser(cached);
+      let verified = await refresh();
+      if (!verified && cached) {
+        // One retry covers a cold start or a momentary mobile-network stall.
+        await new Promise((resolve) => setTimeout(resolve, 700));
+        verified = await refresh();
+      }
+      if (!alive) return;
+      // Only an explicit "no session" while online sends the user back to sign-in.
+      if (!verified && cached) applyUser(navigator.onLine === false ? cached : null);
+      setLoading(false);
     })();
     return () => { alive = false; };
-  }, [refresh]);
+  }, [applyUser, refresh]);
+
+  useEffect(() => {
+    if (user) writeCachedUser(user);
+  }, [user]);
 
   useEffect(() => {
     if (!user) return;
@@ -53,8 +98,9 @@ function AuthProvider({ children }) {
 
   const logout = useCallback(async () => {
     try { await api('/auth/logout', { method: 'POST' }); } catch { /* session already gone */ }
-    setUser(null);
-  }, []);
+    writeCachedUser(null);
+    applyUser(null);
+  }, [applyUser]);
 
   const value = useMemo(() => ({ user, setUser, loading, refresh, logout }), [user, loading, refresh, logout]);
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
