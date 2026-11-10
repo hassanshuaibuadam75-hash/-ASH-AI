@@ -3,6 +3,7 @@ import { api } from '../api.js';
 import { Field, Spinner, useToast, Badge } from '../ui.jsx';
 import * as aiQueue from '../aiQueue.js';
 import { OfficialPublisher, ModerationPanel } from '../components/ModerationPanel.jsx';
+import AiThread from '../components/AiThread.jsx';
 
 const LANGUAGES = [
   ['English', 'English'], ['Hausa', 'Hausa'], ['Igbo', 'Igbo'], ['Yoruba', 'Yoruba'],
@@ -426,15 +427,7 @@ export default function AI() {
 
         {tab === 'staff' ? <OfficialPublisher /> : null}
 
-        {tab === 'chat' ? (
-          <div className="stack" style={{ marginTop: 14 }}>
-            <div className="ai-chat" aria-live="polite">
-              {chat.length === 0 ? (
-                <p className="muted small" style={{ margin: 0 }}>
-                  Ask #ash AI anything about #ash Mesh — posting, privacy, marketplace rules, #ash Academy or
-                  troubleshooting. Answers come from a live AI model and can be wrong; check anything important.
-                </p>
-              ) : null}
+        {tab === 'chat' ? <AiThread /> : null}
               {chat.map((m, i) => (
                 <div key={i} className={`ai-msg ${m.role}`}>
                   <div className="ai-msg-head">
