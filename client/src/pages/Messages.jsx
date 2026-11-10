@@ -4,6 +4,7 @@ import { api, formatTime } from '../api.js';
 import { useAuth } from '../App.jsx';
 import { Avatar, Empty, Spinner, useToast, Badge } from '../ui.jsx';
 import { encryptForPeer, decryptFromPeer, encryptFile, decryptFile } from '../crypto.js';
+import AiThread from '../components/AiThread.jsx';
 import {
   ROUTE, ROUTE_LABEL, chooseRoute, newClientId, queueOutgoing, listQueued,
   removeQueued, bumpQueued, reportRoute, readCapabilities,
@@ -20,6 +21,7 @@ export default function Messages() {
   const toast = useToast();
   const [params, setParams] = useSearchParams();
   const activeId = params.get('c');
+  const aiOpen = params.get('ai') === '1';
   const [conversations, setConversations] = useState(null);
   const [thread, setThread] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -280,16 +282,20 @@ export default function Messages() {
           <strong>Messages</strong>
           {queuedCount ? <Badge tone="amber">{queuedCount} queued</Badge> : null}
         </div>
-        {/* Official assistant first, always. This opens the real #ash AI assistant rather
-            than pretending to be a private conversation with a person. */}
-        <a href="/ai" className="conv-item pinned-ai">
+        {/* Official assistant first, always. Opens the persistent @ashai thread in place, so
+            the conversation is not lost by navigating to another page. */}
+        <button
+          type="button"
+          className={`conv-item pinned-ai ${aiOpen ? 'active' : ''}`}
+          onClick={() => setParams({ ai: '1' })}
+        >
           <span className="avatar ai-avatar" aria-hidden="true">✦</span>
           <span className="conv-meta">
             <span className="conv-name">#ash AI</span>
             <span className="tiny muted">Official assistant · AI</span>
           </span>
           <Badge tone="green">AI</Badge>
-        </a>
+        </button>
 
         {conversations.length === 0 ? (
           <p className="muted small">No conversations yet. Open a profile and choose “Message”.</p>
@@ -316,7 +322,9 @@ export default function Messages() {
       </aside>
 
       <section className="card thread">
-        {!activeId ? (
+        {aiOpen ? (
+          <AiThread />
+        ) : !activeId ? (
           <Empty title="Your private conversations" hint="Messages are encrypted on your device before they are sent." />
         ) : (
           <>
