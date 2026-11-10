@@ -68,6 +68,18 @@ function AuthProvider({ children }) {
     }
   }, [applyUser]);
 
+  // A single disagreeing reply must never end a valid session. If the boot check reports
+  // "no user" while this device knows an account, confirm against another authenticated
+  // endpoint before treating the device as signed out.
+  const sessionAlive = useCallback(async () => {
+    try {
+      await api('/notifications');
+      return true;
+    } catch (err) {
+      return err && err.status === 401 ? false : null;
+    }
+  }, []);
+
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -80,12 +92,17 @@ function AuthProvider({ children }) {
         verified = await refresh();
       }
       if (!alive) return;
-      // Only an explicit "no session" while online sends the user back to sign-in.
+      if (!verified && cached) {
+        const sessionOk = await sessionAlive();
+        if (sessionOk === true) verified = cached;
+      }
+      if (!alive) return;
+      // Only a confirmed "no session" while online sends the user back to sign-in.
       if (!verified && cached) applyUser(navigator.onLine === false ? cached : null);
       setLoading(false);
     })();
     return () => { alive = false; };
-  }, [applyUser, refresh]);
+  }, [applyUser, refresh, sessionAlive]);
 
   useEffect(() => {
     if (user) writeCachedUser(user);
