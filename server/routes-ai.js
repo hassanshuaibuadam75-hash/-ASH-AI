@@ -1247,6 +1247,145 @@ router.get('/ai/summary', requireAuth, requireStaff, async (req, res) => {
   });
 });
 
+// --- Persistent assistant thread -------------------------------------------
+// The @ashai conversation must survive navigation, reloads and sign-in. It used to live only
+// in React state on the /ai page, so leaving the page lost the history. One stable thread is
+// stored per user here; the client renders the same thread inside Messages and on /ai.
+
+function ensureAiThreadSchema() {
+  db.prepare(
+    `CREATE TABLE IF NOT EXISTS ai_thread_messages (
+       id TEXT PRIMARY KEY,
+       user_id TEXT NOT NULL,
+       role TEXT NOT NULL,
+       content TEXT NOT NULL,
+       client_id TEXT,
+       created_at TEXT NOT NULL
+     )`
+  ).run();
+  db.prepare(
+    'CREATE INDEX IF NOT EXISTS idx_ai_thread_user ON ai_thread_messages(user_id, created_at)'
+  ).run();
+  db.prepare(
+    'CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_thread_client ON ai_thread_messages(user_id, client_id)'
+  ).run();
+}
+
+ensureAiThreadSchema();
+
+function serializeThreadMessage(row) {
+  return {
+    id: row.id,
+    role: row.role === 'assistant' ? 'assistant' : 'user',
+    content: row.content,
+    clientId: row.client_id || null,
+    createdAt: row.created_at,
+    aiGenerated: row.role === 'assistant',
+  };
+}
+
+router.get('/ai/thread', requireAuth, (req, res) => {
+  const rows = db
+    .prepare('SELECT * FROM ai_thread_messages WHERE user_id = ? ORDER BY created_at ASC, rowid ASC LIMIT 300')
+    .all(req.user.id);
+  res.json({
+    messages: rows.map(serializeThreadMessage),
+    online: groqConfigured(),
+    account: { username: AI_USERNAME, fullName: '#ash AI' },
+    disclosure: AI_DISCLOSURE,
+  });
+});
+
+router.post(
+  '/ai/thread/messages',
+  requireAuth,
+  rateLimit({ name: 'ai_thread', limit: 120, windowMs: 60 * 60 * 1000 }),
+  async (req, res) => {
+    const content = clean(req.body.content, 4000);
+    const clientId = clean(req.body.clientId, 80) || null;
+    if (!content) return badRequest(res, 'Write a message first.');
+
+    // Idempotency: a retried or re-synced message must never be stored twice.
+    if (clientId) {
+      const existing = db
+        .prepare('SELECT * FROM ai_thread_messages WHERE user_id = ? AND client_id = ?')
+        .get(req.user.id, clientId);
+      if (existing) return res.json({ duplicate: true, userMessage: serializeThreadMessage(existing), reply: null });
+    }
+
+    if (dailyUsage(req.user.id) >= DAILY_LIMIT) {
+      return res.status(429).json({ error: 'ai_daily_limit', message: 'Daily #ash AI limit reached. Try again tomorrow.' });
+    }
+
+    const userRow = {
+      id: uid('aim_'),
+      user_id: req.user.id,
+      role: 'user',
+      content,
+      client_id: clientId,
+      created_at: now(),
+    };
+    db.prepare(
+      'INSERT INTO ai_thread_messages (id, user_id, role, content, client_id, created_at) VALUES (?,?,?,?,?,?)'
+    ).run(userRow.id, userRow.user_id, userRow.role, userRow.content, userRow.client_id, userRow.created_at);
+
+    if (!groqConfigured()) {
+      return res.status(503).json({
+        error: 'ai_not_configured',
+        message: FRIENDLY_ERRORS.not_configured,
+        kind: 'not_configured',
+        userMessage: serializeThreadMessage(userRow),
+        reply: null,
+      });
+    }
+
+    // History is rebuilt from storage, so the assistant keeps context across devices and reloads.
+    const historyRows = db
+      .prepare('SELECT * FROM ai_thread_messages WHERE user_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 20')
+      .all(req.user.id)
+      .reverse();
+    const history = historyRows.map((row) => ({ role: row.role === 'assistant' ? 'assistant' : 'user', content: row.content }));
+
+    try {
+      const result = await groqChat({
+        messages: [{ role: 'system', content: systemPrompt(clean(req.body.surface, 40) || 'chat') }, ...history],
+        temperature: 0.6,
+        maxTokens: 900,
+      });
+      const assistantRow = {
+        id: uid('aim_'),
+        user_id: req.user.id,
+        role: 'assistant',
+        content: result.text,
+        client_id: null,
+        created_at: now(),
+      };
+      db.prepare(
+        'INSERT INTO ai_thread_messages (id, user_id, role, content, client_id, created_at) VALUES (?,?,?,?,?,?)'
+      ).run(assistantRow.id, assistantRow.user_id, assistantRow.role, assistantRow.content, null, assistantRow.created_at);
+      recordUsage(req.user.id, 'chat', true);
+      return res.status(201).json({
+        duplicate: false,
+        userMessage: serializeThreadMessage(userRow),
+        reply: serializeThreadMessage(assistantRow),
+        disclosure: AI_DISCLOSURE,
+      });
+    } catch (err) {
+      recordUsage(req.user.id, 'chat', false);
+      return res.status(err.status || 502).json({
+        ...groqErrorBody(err),
+        userMessage: serializeThreadMessage(userRow),
+        reply: null,
+      });
+    }
+  }
+);
+
+router.delete('/ai/thread', requireAuth, (req, res) => {
+  db.prepare('DELETE FROM ai_thread_messages WHERE user_id = ?').run(req.user.id);
+  res.json({ ok: true });
+});
+
 // --- The official AI account's own profile ---------------------------------
 
 router.get('/ai/account', requireAuth, (req, res) => {
