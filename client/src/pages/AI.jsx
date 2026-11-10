@@ -428,52 +428,6 @@ export default function AI() {
         {tab === 'staff' ? <OfficialPublisher /> : null}
 
         {tab === 'chat' ? <AiThread /> : null}
-              {chat.map((m, i) => (
-                <div key={i} className={`ai-msg ${m.role}`}>
-                  <div className="ai-msg-head">
-                    <strong>{m.role === 'user' ? 'You' : '#ash AI'}</strong>
-                    {m.role === 'assistant' ? <Badge tone="green">AI-generated</Badge> : null}
-                  </div>
-                  <div className="ai-msg-body">{m.content}</div>
-                  {m.disclosure ? <div className="tiny muted">{m.disclosure}</div> : null}
-                </div>
-              ))}
-              {sending ? (
-                <div className="ai-msg assistant">
-                  <div className="ai-msg-head"><strong>#ash AI</strong></div>
-                  <div className="row small muted"><span className="spinner" /> Thinking…</div>
-                </div>
-              ) : null}
-              <div ref={endRef} />
-            </div>
-
-            {chatError ? <div className="banner warn">{chatError}</div> : null}
-
-            <form onSubmit={sendChat} className="stack">
-              <Field label="Message #ash AI">
-                <textarea
-                  rows={3}
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  placeholder="Ask about posting, privacy, marketplace orders, #ash Academy…"
-                  maxLength={4000}
-                  disabled={sending}
-                />
-              </Field>
-              <div className="row" style={{ gap: 8 }}>
-                <button className="btn primary" disabled={sending || !chatInput.trim() || !status.configured}>
-                  {sending ? <span className="spinner" /> : 'Send'}
-                </button>
-                {chat.length ? (
-                  <button type="button" className="btn ghost sm" onClick={() => { setChat([]); setChatError(''); }}>
-                    Clear chat
-                  </button>
-                ) : null}
-                <span className="tiny muted">Chat needs internet. Queued actions work offline.</span>
-              </div>
-            </form>
-          </div>
-        ) : null}
 
         {tab === 'tools' ? (
           <div className="stack" style={{ marginTop: 14 }}>
