@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import express from 'express';
 import { db, uid, now, parseJSON, toPublicUser, notify, audit, areFriends, isBlocked } from './db.js';
 import { requireAuth, upload, saveMedia, rateLimit, clean, clampInt, badRequest, clientIp } from './lib.js';
+import { screenContent } from './moderation.js';
 
 const router = express.Router();
 
@@ -127,6 +128,10 @@ router.post('/market/listings', requireAuth, rateLimit({ name: 'listing', limit:
     `INSERT INTO marketplace_listings (id, seller_id, title, description, category, price_minor, currency, location, media, status, created_at, updated_at)
      VALUES (?,?,?,?,?,?,?,?,?,'active',?,?)`
   ).run(id, req.user.id, title, description, category, priceMinor, 'NGN', location, JSON.stringify(mediaIds), now(), now());
+  // Marketplace listings are screened too: scams, counterfeit goods and bait prices enter
+  // the human review queue with the original text kept as evidence.
+  screenContent({ targetType: 'listing', targetId: id, authorId: req.user.id, text: `${title}\n${description}` });
+
   audit(req.user.id, 'listing.create', 'listing', id, { priceMinor }, clientIp(req));
   res.status(201).json({ listing: serializeListing(db.prepare('SELECT * FROM marketplace_listings WHERE id = ?').get(id), req.user.id) });
 });

@@ -157,8 +157,14 @@ router.post('/posts', requireAuth, rateLimit({ name: 'post', limit: 40, windowMs
     const original = db.prepare('SELECT author_id FROM posts WHERE id = ?').get(sharedPostId);
     if (original) notify(original.author_id, { type: 'post_share', actorId: req.user.id, entityType: 'post', entityId: id });
   }
+  // Screen before the author is told it succeeded, so the response carries the real state.
+  const moderation = screenContent({ targetType: 'post', targetId: id, authorId: req.user.id, text: body });
+
   audit(req.user.id, 'post.create', 'post', id, { kind, audience }, clientIp(req));
-  res.status(201).json({ post: serializePost(db.prepare('SELECT * FROM posts WHERE id = ?').get(id), req.user.id) });
+  res.status(201).json({
+    post: serializePost(db.prepare('SELECT * FROM posts WHERE id = ?').get(id), req.user.id),
+    moderation: { status: moderation.status, score: moderation.score, reviewId: moderation.reviewId },
+  });
 });
 
 router.patch('/posts/:id', requireAuth, (req, res) => {
@@ -234,8 +240,10 @@ router.post('/posts/:id/comments', requireAuth, rateLimit({ name: 'comment', lim
   if (!body) return badRequest(res, 'Write a comment first.');
   const id = uid('cmt_');
   db.prepare('INSERT INTO comments (id, post_id, author_id, body, created_at) VALUES (?,?,?,?,?)').run(id, post.id, req.user.id, body, now());
+  const moderation = screenContent({ targetType: 'comment', targetId: id, authorId: req.user.id, text: body });
   notify(post.author_id, { type: 'post_comment', actorId: req.user.id, entityType: 'post', entityId: post.id, data: { excerpt: body.slice(0, 120) } });
   res.status(201).json({
+    moderation: { status: moderation.status, score: moderation.score, reviewId: moderation.reviewId },
     comment: {
       id, body, createdAt: now(), isOwner: true,
       author: { id: req.user.id, username: req.user.username, fullName: req.user.full_name, avatarUrl: req.user.avatar_media_id ? `/api/media/${req.user.avatar_media_id}` : null },
