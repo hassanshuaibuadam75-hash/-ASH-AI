@@ -5,6 +5,7 @@ import { ensureIdentity } from './crypto.js';
 import { readCapabilities, describeCapabilities } from './uar.js';
 import { Avatar, ToastProvider, useToast, NetworkChip, Spinner } from './ui.jsx';
 import AuthPage from './pages/Auth.jsx';
+import Menu from './pages/Menu.jsx';
 import Feed from './pages/Feed.jsx';
 import Profile from './pages/Profile.jsx';
 import Friends from './pages/Friends.jsx';
@@ -123,14 +124,21 @@ function AuthProvider({ children }) {
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
 }
 
+// Five primary destinations, as approved. Everything else is grouped in Menu so the
+// bottom bar never clips on small screens and no feature is removed.
 const NAV = [
   { to: '/', label: 'Home', icon: '⌂', end: true },
   { to: '/friends', label: 'Friends', icon: '⚇' },
   { to: '/messages', label: 'Messages', icon: '✉' },
   { to: '/market', label: 'Market', icon: '▤' },
-  { to: '/ai', label: '#ash AI', icon: '✦' },
+  { to: '/menu', label: 'Menu', icon: '☰' },
+];
+
+// Secondary destinations reachable from the sidebar and the Menu page.
+const MORE_NAV = [
   { to: '/academy', label: 'Academy', icon: '✎' },
   { to: '/heritage', label: 'Heritage', icon: '◈' },
+  { to: '/ai', label: '#ash AI', icon: '✦' },
   { to: '/notifications', label: 'Alerts', icon: '◔' },
 ];
 
@@ -193,9 +201,6 @@ function MobileNav({ unread }) {
           {item.to === '/notifications' && unread > 0 ? <span className="nav-badge">{unread}</span> : null}
         </NavLink>
       ))}
-      <NavLink to={`/u/${user.username}`} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-        <span className="ico" aria-hidden="true">◉</span><span>Me</span>
-      </NavLink>
     </nav>
   );
 }
@@ -305,6 +310,7 @@ function Shell() {
           <Route path="/heritage" element={<Heritage />} />
           <Route path="/notifications" element={<Notifications />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/menu" element={<Menu />} />
           <Route path="/u/:username" element={<Profile />} />
           <Route path="/founder" element={user.isFounder ? <Founder /> : <Navigate to="/" replace />} />
           <Route path="/admin" element={['admin', 'moderator', 'founder'].includes(user.role) ? <Admin /> : <Navigate to="/" replace />} />

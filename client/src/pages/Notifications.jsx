@@ -26,7 +26,7 @@ export default function Notifications() {
 
   async function load() {
     try {
-      const data = await api.get('/notifications');
+      const data = await api('/notifications');
       setItems(data.notifications);
     } catch (err) {
       toast.push(err.message, 'error');
@@ -39,7 +39,7 @@ export default function Notifications() {
 
   async function markAll() {
     try {
-      await api.post('/notifications/read-all', {});
+      await api('/notifications/read-all', { method: 'POST', body: {} });
       setItems((prev) => prev.map((n) => ({ ...n, readAt: n.readAt || new Date().toISOString() })));
       window.dispatchEvent(new CustomEvent('ash:notifications-changed'));
     } catch (err) {
