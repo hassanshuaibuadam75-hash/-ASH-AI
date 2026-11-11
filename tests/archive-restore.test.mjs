@@ -368,7 +368,9 @@ async function main() {
   const avatarA = await member.upload('/api/users/me/avatar', PNG, 'avatar-member.png', 'image/png');
   const avatarB = await friend.upload('/api/users/me/avatar', Buffer.concat([PNG, Buffer.from('friend-cover')]), 'avatar-friend.png', 'image/png');
   const memberProfile = await member.get('/api/users/me');
-  const avatarId = (memberProfile.body?.user?.avatarUrl || '').split('/').pop();
+  const avatarUrl = avatarA.body?.avatarUrl || memberProfile.body?.user?.avatarUrl || memberProfile.body?.avatarUrl || '';
+  const avatarId = avatarUrl.split('/').filter(Boolean).pop();
+  check('avatar upload returns a servable media URL', /^\/api\/media\/[^/]+$/.test(avatarUrl), `avatarUrl=${avatarUrl}`);
   check('both accounts upload profile media to disk', avatarA.status < 300 && avatarB.status < 300 && fs.existsSync(uploadsDir) && fs.readdirSync(uploadsDir).length >= 2, `a=${avatarA.status} b=${avatarB.status}`);
 
   const avatarBefore = await member.bytes(`/api/media/${avatarId}`);

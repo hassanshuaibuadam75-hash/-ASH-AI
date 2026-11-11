@@ -968,10 +968,11 @@ export function restoreArchive(zipPath, { actorId = null, sessionId = null, ip =
     // Nothing above this line changed live state. From here on, everything is reversible.
     const safety = createBackup({ reason: 'pre-archive-restore', actorId });
     const journal = applyMediaFiles(stagedUploads, work);
-    maybeFault('after-media');
     let restore = null;
 
     try {
+      // Inside the try on purpose: a failure at this stage must replay the media journal.
+      maybeFault('after-media');
       const adopted = adoptUploadedBackup(stagedDb, { actorId });
       restore = restoreBackup(adopted.name, { actorId, sessionId, ip, source: 'archive' });
       maybeFault('after-db');
