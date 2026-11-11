@@ -218,7 +218,7 @@ function serializeOrder(row, viewerId) {
     amountMinor: row.amount_minor,
     amount: row.amount_minor / 100,
     commissionMinor: row.commission_minor,
-    commissionRate: row.commission_rate,
+    commissionRate: row.status === 'held_founder_review' ? null : row.commission_rate,
     payoutMinor: row.payout_minor,
     currency: row.currency,
     provider: row.provider,

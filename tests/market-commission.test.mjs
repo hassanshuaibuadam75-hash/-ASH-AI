@@ -207,7 +207,7 @@ async function main() {
       headers: { 'Idempotency-Key': 'stageb-fee-tamper' },
     });
     check('client-supplied commission and payout are ignored',
-      feeTamper.status === 201 && feeTamper.data?.order?.commissionMinor === 60 && feeTamper.data.order.commissionRate === 0.03,
+      feeTamper.status === 201 && feeTamper.data?.order?.commissionMinor === 6000 && feeTamper.data.order.commissionRate === 0.03,
       `${feeTamper.status} commission=${feeTamper.data?.order?.commissionMinor} rate=${feeTamper.data?.order?.commissionRate}`);
 
     /* -------------------------------- idempotency ------------------------------ */
@@ -225,6 +225,16 @@ async function main() {
       `${second.status} ${JSON.stringify(second.data).slice(0, 200)}`);
 
     /* ------------------------- held order cannot be paid ----------------------- */
+
+    // A second held order, so the rejection path is exercised independently.
+    const secondHeldListing = await createListing(12000000, 'Boundary ₦12,000,000');
+    const secondHeldRes = await buyer.post(`/api/market/listings/${secondHeldListing.id}/orders`, {
+      json: {}, headers: { 'Idempotency-Key': 'stageb-held-second' },
+    });
+    check('a second order above ₦10,000,000 is also held',
+      secondHeldRes.status === 201 && secondHeldRes.data?.order?.status === 'held_founder_review',
+      `${secondHeldRes.status} ${secondHeldRes.data?.order?.status}`);
+    if (secondHeldRes.data?.order?.id) heldOrderIds.push(secondHeldRes.data.order.id);
 
     const heldId = heldOrderIds[0];
     if (heldId) {
