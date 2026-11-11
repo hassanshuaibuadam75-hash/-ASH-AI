@@ -16,6 +16,7 @@
 // integrity check, and a restore is never reported as successful until the post-restore
 // integrity and foreign-key checks pass.
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
@@ -302,10 +303,19 @@ export function restoreBackup(name, { actorId = null, sessionId = null, ip = '',
     throw httpError(400, 'That file is not an #ash Mesh database (no accounts table).');
   }
 
+  // Copy the snapshot out of the backup directory before taking the safety snapshot:
+  // createBackup() applies retention, and the snapshot being restored must never be the
+  // file that retention prunes out from under the restore.
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ash-restore-'));
+  const tempSource = path.join(tempDir, 'source.db');
+  fs.copyFileSync(file, tempSource);
+
   const safety = createBackup({ reason: 'pre-restore', actorId });
   const sessionRow = sessionId ? db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId) : null;
 
-  const sourceDb = new Database(file, { readonly: true, fileMustExist: true });
+  const sourceDb = new Database(tempSource, { readonly: true, fileMustExist: true });
+  // POSIX keeps the inode alive for the open read handle, so the copy can be removed now.
+  fs.rmSync(tempDir, { recursive: true, force: true });
   const liveTables = new Set(tableNames(db));
   const restored = {};
 
