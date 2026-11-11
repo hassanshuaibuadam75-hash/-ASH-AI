@@ -1371,17 +1371,43 @@ router.post(
       .reverse();
     const history = historyRows.map((row) => ({ role: row.role === 'assistant' ? 'assistant' : 'user', content: row.content }));
 
+    const isFounder = req.user.is_founder === 1 && req.user.role === 'founder';
+    const messages = [
+      { role: 'system', content: systemPrompt(clean(req.body.surface, 40) || 'chat') },
+      ...(isFounder ? [{ role: 'system', content: FOUNDER_EDITOR_PROMPT }] : []),
+      ...history,
+    ];
+
     try {
-      const result = await groqChat({
-        messages: [{ role: 'system', content: systemPrompt(clean(req.body.surface, 40) || 'chat') }, ...history],
-        temperature: 0.6,
-        maxTokens: 900,
-      });
+      const result = await groqChat({ messages, temperature: 0.6, maxTokens: 900 });
+
+      // Founder-only: a site_edit reply becomes an inert, reviewable proposal.
+      // Nothing is applied or published here — approval is a separate explicit action.
+      let replyText = result.text;
+      let proposal = null;
+      if (isFounder) {
+        const parsed = extractJson(replyText);
+        if (parsed && parsed.site_edit === true && Array.isArray(parsed.changes)) {
+          try {
+            proposal = siteEditor.createProposal({
+              founderId: req.user.id,
+              instruction: content,
+              changes: parsed.changes,
+              summary: parsed.summary,
+              source: 'ai',
+            });
+            replyText = `${parsed.summary || 'I prepared that change.'}\n\nNothing has been applied yet. Review the proposal below, then choose Apply changes or Cancel.`;
+          } catch (err) {
+            replyText = `${replyText}\n\nI could not prepare that change: ${err.message}`;
+          }
+        }
+      }
+
       const assistantRow = {
         id: uid('aim_'),
         user_id: req.user.id,
         role: 'assistant',
-        content: result.text,
+        content: replyText,
         client_id: null,
         created_at: now(),
       };
@@ -1393,6 +1419,7 @@ router.post(
         duplicate: false,
         userMessage: serializeThreadMessage(userRow),
         reply: serializeThreadMessage(assistantRow),
+        proposal,
         disclosure: AI_DISCLOSURE,
       });
     } catch (err) {
