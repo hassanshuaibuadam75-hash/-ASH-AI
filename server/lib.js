@@ -47,13 +47,21 @@ export function ensureFounderAccount() {
   if (!email) return null;
 
   const existing = db
-    .prepare('SELECT id, role, is_founder FROM users WHERE lower(email) = ?')
+    .prepare('SELECT id, role, is_founder, password_hash FROM users WHERE lower(email) = ?')
     .get(email);
 
   if (existing) {
     if (existing.is_founder !== 1 || existing.role !== 'founder') {
       db.prepare("UPDATE users SET role = 'founder', is_founder = 1 WHERE id = ?").run(existing.id);
       console.log(`[#ash Mesh] Founder authority bound to account ${existing.id}`);
+    }
+    // The operator's configured credential stays authoritative: if FOUNDER_PASSWORD is
+    // rotated, the next boot applies it. Without this the account silently kept an old
+    // password and a rotated secret appeared to be ignored.
+    const configured = String(process.env.FOUNDER_PASSWORD || '');
+    if (configured && !verifyPassword(configured, existing.password_hash)) {
+      db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hashPassword(configured), existing.id);
+      console.log('[#ash Mesh] Founder password updated from server configuration.');
     }
     return existing.id;
   }
