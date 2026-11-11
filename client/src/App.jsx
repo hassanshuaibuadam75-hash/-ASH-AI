@@ -23,6 +23,21 @@ import Heritage from './pages/Heritage.jsx';
 const AuthCtx = createContext(null);
 export const useAuth = () => useContext(AuthCtx);
 
+// Route → site-config page key. Used by the shell to render the editable page intro, so the
+// map lives at module scope where both the header and the page body can resolve it.
+const PAGE_KEYS = {
+  '/': 'home',
+  '/market': 'market',
+  '/academy': 'academy',
+  '/heritage': 'heritage',
+  '/messages': 'messages',
+  '/friends': 'friends',
+  '/settings': 'settings',
+  '/menu': 'support',
+  '/notifications': 'notifications',
+  '/ai': 'ai',
+};
+
 // Offline-first session: the last confirmed account is kept on the device so a slow or
 // unavailable boot check cannot throw a signed-in user back to the sign-in screen.
 const SESSION_CACHE = 'ash_mesh_session_user';
