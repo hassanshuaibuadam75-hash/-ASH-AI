@@ -230,13 +230,6 @@ function Topbar({ unread }) {
     };
   }, []);
 
-  const INTRO_PAGES = {
-    '/': 'home', '/market': 'market', '/academy': 'academy', '/heritage': 'heritage',
-    '/messages': 'messages', '/friends': 'friends', '/settings': 'settings', '/menu': 'support',
-    '/notifications': 'notifications', '/ai': 'ai',
-  };
-  const introPage = INTRO_PAGES[location.pathname] ||
-    (location.pathname.startsWith('/u/') ? 'profile' : null);
   const titles = {
     '/': 'Home', '/friends': 'Friends', '/messages': 'Messages', '/market': 'Marketplace',
     '/ai': '#ash AI', '/notifications': 'Notifications', '/settings': 'Settings',
@@ -295,6 +288,11 @@ function Shell() {
   }, [user, location.pathname]);
 
   useEffect(() => { window.scrollTo(0, 0); }, [location.pathname]);
+
+  // Page slot lookup lives in the shell that actually renders the intro, so the header and
+  // the page body always resolve the same page key.
+  const introPage = PAGE_KEYS[location.pathname] ||
+    (location.pathname.startsWith('/u/') ? 'profile' : null);
 
   if (loading) {
     return <div className="auth-wrap"><div className="center"><Spinner label="Loading #ash Mesh" /></div></div>;
