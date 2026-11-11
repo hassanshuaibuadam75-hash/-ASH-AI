@@ -887,6 +887,17 @@ function rollbackMedia(journal) {
 }
 
 /**
+ * Test-only fault injection. Disaster-recovery rollback can only be trusted if it has actually
+ * been exercised, so the drill forces a failure at a chosen stage. It is inert unless
+ * NODE_ENV is 'test', so a deployed instance can never be told to fail a restore.
+ */
+function maybeFault(stage) {
+  if (process.env.NODE_ENV !== 'test') return;
+  const fault = process.env.ARCHIVE_RESTORE_FAULT;
+  if (fault && fault === stage) throw new Error(`injected test fault at ${stage}`);
+}
+
+/**
  * Restore a downloaded export archive: database rows AND uploaded media.
  *
  * Order matters. Everything is extracted and verified in a staging directory first, so a bad
@@ -957,11 +968,13 @@ export function restoreArchive(zipPath, { actorId = null, sessionId = null, ip =
     // Nothing above this line changed live state. From here on, everything is reversible.
     const safety = createBackup({ reason: 'pre-archive-restore', actorId });
     const journal = applyMediaFiles(stagedUploads, work);
+    maybeFault('after-media');
     let restore = null;
 
     try {
       const adopted = adoptUploadedBackup(stagedDb, { actorId });
       restore = restoreBackup(adopted.name, { actorId, sessionId, ip, source: 'archive' });
+      maybeFault('after-db');
 
       for (const file of expected) {
         const target = path.join(UPLOAD_DIR, file.name);
