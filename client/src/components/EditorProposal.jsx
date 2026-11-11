@@ -55,25 +55,25 @@ export default function EditorProposal({ initial }) {
 
   async function apply() {
     const data = await call(`/founder/editor/proposals/${proposal.id}/apply`, {}, 'apply');
-    if (data) toast('Applied to TEST. Review the preview, then publish to LIVE.');
+    if (data) toast.push('Applied to TEST. Review the preview, then publish to LIVE.', 'success');
   }
 
   async function cancel() {
     const data = await call(`/founder/editor/proposals/${proposal.id}/cancel`, {}, 'cancel');
-    if (data) toast('Proposal cancelled. Nothing changed.');
+    if (data) toast.push('Proposal cancelled. Nothing changed.', 'info');
   }
 
   async function markTested() {
     if (!draftId) return;
     const data = await call(`/founder/editor/versions/${draftId}/tested`, {}, 'tested');
-    if (data) toast('Draft marked as tested.');
+    if (data) toast.push('Draft marked as tested.', 'success');
   }
 
   async function publish() {
     if (!draftId) return;
     if (!window.confirm('Publish this change to LIVE for all #ash Mesh users?')) return;
     const data = await call(`/founder/editor/versions/${draftId}/publish`, {}, 'publish');
-    if (data && data.version) toast(`Published to LIVE as version ${data.version.number}.`);
+    if (data && data.version) toast.push(`Published to LIVE as version ${data.version.number}.`, 'success');
   }
 
   const previewHref = draftId ? `${pageHref(proposal.pages)}?preview=${encodeURIComponent(draftId)}` : null;

@@ -117,7 +117,7 @@ export default function FounderEditor() {
         body: { changes, summary: describe() },
       });
       setProposal(data.proposal);
-      toast('Preview ready. Nothing is applied until you approve it.');
+      toast.push('Preview ready. Nothing is applied until you approve it.', 'info');
       await load();
     } catch (err) {
       setError(err.message || 'That preview could not be generated.');
@@ -259,7 +259,7 @@ export default function FounderEditor() {
         ) : (
           <Empty title="No change previewed yet" hint="Choose an edit above and press Preview change." />
         )}
-        <ProposalInbox enabled />
+        <ProposalInbox enabled excludeId={proposal && proposal.id} />
       </div>
 
       <div className="card">

@@ -58,7 +58,7 @@ export default function FounderEditorPanel() {
     setError('');
     try {
       await api(path, { method: 'POST', body: body || {} });
-      toast(successMessage);
+      toast.push(successMessage, 'success');
       await load();
     } catch (err) {
       setError(err.message || 'That action could not be completed.');

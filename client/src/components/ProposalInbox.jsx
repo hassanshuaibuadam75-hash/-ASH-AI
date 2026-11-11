@@ -8,7 +8,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { api } from '../api.js';
 import EditorProposal from './EditorProposal.jsx';
 
-export default function ProposalInbox({ enabled }) {
+export default function ProposalInbox({ enabled, excludeId }) {
   const [items, setItems] = useState([]);
   const [denied, setDenied] = useState(false);
 
@@ -17,11 +17,11 @@ export default function ProposalInbox({ enabled }) {
     try {
       const data = await api('/founder/editor/proposals?limit=10');
       const list = Array.isArray(data.proposals) ? data.proposals : [];
-      setItems(list.filter((p) => p.status === 'proposed'));
+      setItems(list.filter((p) => p.status === 'proposed' && (!excludeId || p.id !== excludeId)));
     } catch (err) {
       if (err && (err.status === 403 || err.status === 401)) setDenied(true);
     }
-  }, [enabled]);
+  }, [enabled, excludeId]);
 
   useEffect(() => {
     if (!enabled) return undefined;
