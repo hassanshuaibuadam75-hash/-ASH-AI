@@ -34,8 +34,9 @@ function check(name, ok, detail = '') {
 }
 
 class Client {
-  constructor(label) {
+  constructor(label, base = BASE) {
     this.label = label;
+    this.base = base;
     this.cookies = new Map();
     this.csrf = '';
   }
@@ -60,7 +61,7 @@ class Client {
     }
     if (this.csrf) headers['x-csrf-token'] = this.csrf;
     if (body !== undefined) headers['content-type'] = 'application/json';
-    const res = await fetch(BASE + route, {
+    const res = await fetch(this.base + route, {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -84,11 +85,11 @@ class Client {
   }
 }
 
-async function waitReady(deadlineMs = 30000) {
+async function waitReady(base = BASE, deadlineMs = 30000) {
   const started = Date.now();
   while (Date.now() - started < deadlineMs) {
     try {
-      const res = await fetch(`${BASE}/api/site-config`);
+      const res = await fetch(`${base}/api/site-config`);
       if (res.ok) return true;
     } catch {
       /* not listening yet */
@@ -288,6 +289,63 @@ check('cancelling changes nothing', (afterCancel.data?.config?.pages?.market?.he
 // ---------------------------------------------------------------- honest AI failure
 const aiDown = await founder.post('/api/founder/editor/propose', { instruction: 'Change the homepage heading' });
 check('missing AI key fails honestly instead of faking a proposal', aiDown.status === 503, `status ${aiDown.status}`);
+
+// ------------------------------------------ founder provisioning (production path)
+// The deployed container starts with an empty database on every release, so the founder
+// account has to come from server-side configuration. It is never derived from a display
+// name, a username, or anything typed into a chat message.
+const bootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ash-founder-boot-'));
+const bootPort = PORT + 601;
+const bootBase = `http://127.0.0.1:${bootPort}`;
+const bootEmail = 'ceo@ashmesh.test';
+const bootPassword = 'FounderBootstrap123!';
+const bootServer = spawn(process.execPath, ['server/index.js'], {
+  cwd: ROOT,
+  env: {
+    ...process.env,
+    PORT: String(bootPort),
+    DATA_DIR: bootDir,
+    FOUNDER_EMAIL: bootEmail,
+    FOUNDER_PASSWORD: bootPassword,
+    FOUNDER_USERNAME: 'thefounder',
+    GROQ_API_KEY: '',
+  },
+  stdio: ['ignore', 'pipe', 'pipe'],
+});
+let bootLog = '';
+bootServer.stdout.on('data', (chunk) => { bootLog += chunk.toString(); });
+bootServer.stderr.on('data', (chunk) => { bootLog += chunk.toString(); });
+
+const bootReady = await waitReady(bootBase);
+check('empty instance boots and provisions the founder from config', bootReady, bootLog.slice(-400));
+
+if (bootReady) {
+  const ceo = new Client('ceo', bootBase);
+  const ceoLogin = await ceo.post('/api/auth/login', { email: bootEmail, password: bootPassword });
+  check('provisioned founder can sign in', ceoLogin.status === 200, `status ${ceoLogin.status}`);
+
+  const ceoStatus = await ceo.get('/api/founder/editor/status');
+  check('provisioned founder reaches the editor with no manual promotion', ceoStatus.status === 200, `status ${ceoStatus.status}`);
+
+  const ceoPropose = await ceo.post('/api/founder/editor/propose', {
+    changes: [{ op: 'set_text', page: 'home', field: 'heading', value: 'Provisioned Founder' }],
+  });
+  check('provisioned founder can propose a change', ceoPropose.status === 201, `status ${ceoPropose.status}`);
+
+  const bootMember = new Client('boot-member', bootBase);
+  const memberReg = await bootMember.post('/api/auth/register', {
+    email: 'boot-member@ashmesh.test',
+    username: 'bootmember',
+    password: 'MemberPass123!',
+    fullName: 'Boot Member',
+  });
+  check('a second account registers on the same instance', memberReg.status < 300, `status ${memberReg.status}`);
+  const memberStatus = await bootMember.get('/api/founder/editor/status');
+  check('the second account is refused editor access', memberStatus.status === 403, `status ${memberStatus.status}`);
+}
+
+try { bootServer.kill('SIGTERM'); } catch { /* already gone */ }
+try { fs.rmSync(bootDir, { recursive: true, force: true }); } catch { /* ignore */ }
 
 console.log(`\n${failures === 0 ? 'All Founder editor checks passed.' : `${failures} check(s) failed.`}\n`);
 shutdown(failures === 0 ? 0 : 1);
