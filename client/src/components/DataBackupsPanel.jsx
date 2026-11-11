@@ -12,6 +12,7 @@ const REASON_LABEL = {
   manual: 'Manual',
   scheduled: 'Scheduled',
   'pre-restore': 'Safety (before restore)',
+  'pre-archive-restore': 'Safety (before archive restore)',
   'pre-export': 'Before export',
 };
 
@@ -37,6 +38,8 @@ export default function DataBackupsPanel() {
   const [busy, setBusy] = useState('');
   const [pending, setPending] = useState('');
   const fileRef = useRef(null);
+  const archiveRef = useRef(null);
+  const [archivePending, setArchivePending] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -134,6 +137,34 @@ export default function DataBackupsPanel() {
     }
   }
 
+  // Restoring an export archive brings back the database rows AND the uploaded photos, videos
+  // and files. The server validates and stages everything before it changes a single live byte.
+  async function uploadArchive(event) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    setBusy('archive');
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const { restore } = await api('/founder/export/restore', { method: 'POST', form });
+      const media = restore?.media?.restored ?? 0;
+      setArchivePending({
+        file: file.name,
+        rows: restore?.rows ?? 0,
+        media,
+        integrity: restore?.archive?.integrity || restore?.integrity || 'unknown',
+        safetyBackup: restore?.archiveSafetyBackup || restore?.safetyBackup || null,
+      });
+      toast.push(`Archive restored · ${restore?.rows ?? 0} rows · ${media} media files`, 'success');
+      await load();
+    } catch (err) {
+      toast.push(err.message, 'error');
+    } finally {
+      setBusy('');
+    }
+  }
+
   if (error && !state) return <div className="banner warn">{error}</div>;
   if (!state) return <Spinner label="Loading backups" />;
 
@@ -162,9 +193,23 @@ export default function DataBackupsPanel() {
           <button className="btn ghost sm" onClick={() => fileRef.current?.click()} disabled={busy === 'upload'}>
             {busy === 'upload' ? 'Restoring…' : 'Restore from file'}
           </button>
+          <button className="btn ghost sm" onClick={() => archiveRef.current?.click()} disabled={busy === 'archive'}>
+            {busy === 'archive' ? 'Restoring…' : 'Restore from archive (.zip)'}
+          </button>
           <input ref={fileRef} type="file" accept=".db,.sqlite,.sqlite3" hidden onChange={uploadRestore} />
+          <input ref={archiveRef} type="file" accept=".zip,application/zip" hidden onChange={uploadArchive} data-testid="archive-restore-input" />
         </div>
       </div>
+
+      {archivePending ? (
+        <div className="banner" style={{ marginTop: 12 }}>
+          <div className="small">
+            Archive <code>{archivePending.file}</code> restored: {archivePending.rows} rows and {archivePending.media}{' '}
+            media file{archivePending.media === 1 ? '' : 's'} · integrity {archivePending.integrity}
+            {archivePending.safetyBackup ? ` · safety snapshot ${archivePending.safetyBackup}` : ''}
+          </div>
+        </div>
+      ) : null}
 
       {warnings.length > 0 ? (
         <div className="banner warn" style={{ marginTop: 12 }}>
@@ -177,7 +222,8 @@ export default function DataBackupsPanel() {
       <p className="tiny muted">
         Snapshots live in <code>{policy.directory}</code> inside the container
         {policy.durableStorage ? '' : ' and are not durable on this plan'} · archive includes uploaded files:{' '}
-        {policy.includesUploadsInArchive ? 'yes' : 'no'} · newest{' '}
+        {policy.includesUploadsInArchive ? 'yes' : 'no'} · archive restore writes media back:{' '}
+        {policy.archiveRestoreIncludesUploads ? 'yes' : 'no'} · newest{' '}
         {state.latest ? `${formatTime(state.latest.createdAt)} ago (${mb(state.latest.sizeBytes)})` : '—'}
       </p>
 
