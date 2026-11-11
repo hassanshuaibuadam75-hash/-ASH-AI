@@ -58,9 +58,21 @@ export function ensureFounderAccount() {
     return existing.id;
   }
 
+  // The Founder password follows exactly the same rule as every other account on the
+  // platform (see validateRegistration): at least 8 characters containing letters and
+  // numbers. One shared rule avoids the confusing case where the app would accept a
+  // password at registration but silently refuse to provision the Founder with it.
   const password = String(process.env.FOUNDER_PASSWORD || '');
-  if (password.length < 10) {
-    console.log('[#ash Mesh] FOUNDER_PASSWORD (10+ characters) is required to provision the founder account.');
+  let passwordProblem = null;
+  if (password.length < 8) {
+    passwordProblem = 'FOUNDER_PASSWORD (8+ characters) is required to provision the founder account.';
+  } else if (password.length > 200) {
+    passwordProblem = 'FOUNDER_PASSWORD is too long to provision the founder account.';
+  } else if (!/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) {
+    passwordProblem = 'FOUNDER_PASSWORD must contain letters and numbers to provision the founder account.';
+  }
+  if (passwordProblem) {
+    console.log(`[#ash Mesh] ${passwordProblem}`);
     return null;
   }
 
