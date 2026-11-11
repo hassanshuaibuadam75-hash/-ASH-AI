@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { api, formatTime, naira } from '../api.js';
 import { Badge, Empty, Field, Spinner, useToast } from '../ui.jsx';
+import DataBackupsPanel from '../components/DataBackupsPanel.jsx';
 
 function Stat({ label, value, hint }) {
   return (
@@ -158,6 +159,8 @@ export default function Founder() {
           <Stat label="Email" value={data.system.emailConfigured ? 'Configured' : 'Not configured'} />
         </div>
       </div>
+
+      <DataBackupsPanel />
 
       <div className="card">
         <h3 style={{ marginTop: 0 }}>Recent administrative activity</h3>
