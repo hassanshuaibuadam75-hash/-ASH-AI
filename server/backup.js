@@ -622,6 +622,416 @@ export function buildArchive({ actorId = null } = {}) {
   return { path: dest, name: stampName, snapshot: snapshot.name, files: entries.length, sizeBytes, uploadBytes, manifest };
 }
 
+/* ----------------------- archive validation and restore ----------------------- */
+
+function readAt(fd, buffer, position) {
+  let offset = 0;
+  while (offset < buffer.length) {
+    const read = fs.readSync(fd, buffer, offset, buffer.length - offset, position + offset);
+    if (!read) throw httpError(400, 'The archive is truncated.');
+    offset += read;
+  }
+  return buffer;
+}
+
+/**
+ * Parse a ZIP central directory without trusting it.
+ *
+ * Only metadata is read here; nothing is written. Entry count, sizes and compression methods
+ * are checked so a crafted archive cannot exhaust the container.
+ */
+function readZipDirectory(file) {
+  const stat = fs.statSync(file);
+  if (!stat.isFile() || stat.size < 22) throw httpError(400, 'That file is not a readable ZIP archive.');
+
+  const tailLength = Math.min(stat.size, 66 * 1024);
+  const fd = fs.openSync(file, 'r');
+  let tail;
+  try {
+    tail = readAt(fd, Buffer.alloc(tailLength), stat.size - tailLength);
+  } finally {
+    fs.closeSync(fd);
+  }
+
+  let eocd = -1;
+  for (let i = tail.length - 22; i >= 0; i -= 1) {
+    if (tail.readUInt32LE(i) === 0x06054b50) {
+      eocd = i;
+      break;
+    }
+  }
+  if (eocd < 0) throw httpError(400, 'That file is not a readable ZIP archive.');
+
+  const entryCount = tail.readUInt16LE(eocd + 10);
+  const directorySize = tail.readUInt32LE(eocd + 12);
+  const directoryOffset = tail.readUInt32LE(eocd + 16);
+  if (entryCount === 0xffff || directoryOffset === 0xffffffff) {
+    throw httpError(413, 'That ZIP archive is too large to restore on this server.');
+  }
+  if (entryCount > ARCHIVE_MAX_ENTRIES) {
+    throw httpError(413, `The archive contains more than ${ARCHIVE_MAX_ENTRIES} entries.`);
+  }
+  if (directoryOffset + directorySize > stat.size) throw httpError(400, 'That ZIP archive is corrupt.');
+
+  const directory = Buffer.alloc(directorySize);
+  const handle = fs.openSync(file, 'r');
+  try {
+    readAt(handle, directory, directoryOffset);
+  } finally {
+    fs.closeSync(handle);
+  }
+
+  const entries = [];
+  let pointer = 0;
+  while (pointer + 46 <= directory.length) {
+    if (directory.readUInt32LE(pointer) !== 0x02014b50) throw httpError(400, 'That ZIP archive is corrupt.');
+    const flags = directory.readUInt16LE(pointer + 8);
+    const method = directory.readUInt16LE(pointer + 10);
+    const crc = directory.readUInt32LE(pointer + 16);
+    const compSize = directory.readUInt32LE(pointer + 20);
+    const uncompSize = directory.readUInt32LE(pointer + 24);
+    const nameLength = directory.readUInt16LE(pointer + 28);
+    const extraLength = directory.readUInt16LE(pointer + 30);
+    const commentLength = directory.readUInt16LE(pointer + 32);
+    const localOffset = directory.readUInt32LE(pointer + 42);
+    const name = directory.subarray(pointer + 46, pointer + 46 + nameLength).toString('utf8');
+
+    if (flags & 0x1) throw httpError(400, 'Encrypted ZIP archives are not supported.');
+    if (compSize === 0xffffffff || uncompSize === 0xffffffff || localOffset === 0xffffffff) {
+      throw httpError(413, 'That ZIP archive uses 64-bit entries this server cannot restore.');
+    }
+
+    entries.push({ name, method, crc, compSize, uncompSize, localOffset, isDirectory: name.endsWith('/') });
+    pointer += 46 + nameLength + extraLength + commentLength;
+  }
+  if (entries.length !== entryCount) throw httpError(400, 'That ZIP archive is corrupt.');
+  return entries;
+}
+
+/** Extract one verified entry to `dest`: size, checksum and method are all enforced. */
+function extractZipEntry(file, entry, dest) {
+  if (entry.method !== 0 && entry.method !== 8) {
+    throw httpError(400, `The archive uses an unsupported compression method for ${entry.name}.`);
+  }
+  if (entry.uncompSize > ARCHIVE_MAX_FILE_BYTES) {
+    throw httpError(413, `The archive entry ${entry.name} is larger than this server accepts.`);
+  }
+
+  const fd = fs.openSync(file, 'r');
+  let start;
+  try {
+    const header = readAt(fd, Buffer.alloc(30), entry.localOffset);
+    if (header.readUInt32LE(0) !== 0x04034b50) throw httpError(400, 'That ZIP archive is corrupt.');
+    start = entry.localOffset + 30 + header.readUInt16LE(26) + header.readUInt16LE(28);
+  } finally {
+    fs.closeSync(fd);
+  }
+
+  if (entry.method === 8) {
+    if (entry.compSize > ARCHIVE_MAX_INFLATE_BYTES) {
+      throw httpError(413, `The archive entry ${entry.name} is too large to decompress safely.`);
+    }
+    const compressed = Buffer.alloc(entry.compSize);
+    const handle = fs.openSync(file, 'r');
+    try {
+      readAt(handle, compressed, start);
+    } finally {
+      fs.closeSync(handle);
+    }
+    let data;
+    try {
+      data = zlib.inflateRawSync(compressed);
+    } catch {
+      throw httpError(400, `The archive entry ${entry.name} could not be decompressed.`);
+    }
+    if (data.length !== entry.uncompSize) throw httpError(400, `The archive entry ${entry.name} has an unexpected size.`);
+    if (crcFinal(crcFeed(crcInit(), data)) !== entry.crc) {
+      throw httpError(400, `The archive entry ${entry.name} failed its checksum.`);
+    }
+    fs.writeFileSync(dest, data);
+    return { bytes: data.length };
+  }
+
+  const source = fs.openSync(file, 'r');
+  const target = fs.openSync(dest, 'w');
+  const chunk = Buffer.alloc(1024 * 1024);
+  let state = crcInit();
+  let written = 0;
+  try {
+    while (written < entry.compSize) {
+      const want = Math.min(chunk.length, entry.compSize - written);
+      const read = fs.readSync(source, chunk, 0, want, start + written);
+      if (!read) throw httpError(400, 'The archive is truncated.');
+      state = crcFeed(state, chunk.subarray(0, read));
+      fs.writeSync(target, chunk.subarray(0, read));
+      written += read;
+    }
+  } finally {
+    fs.closeSync(source);
+    fs.closeSync(target);
+  }
+  if (written !== entry.uncompSize) throw httpError(400, `The archive entry ${entry.name} has an unexpected size.`);
+  if (crcFinal(state) !== entry.crc) throw httpError(400, `The archive entry ${entry.name} failed its checksum.`);
+  return { bytes: written };
+}
+
+/**
+ * Read and validate an export archive without changing anything.
+ *
+ * Rejects unsafe paths, duplicate entries, a missing manifest, a database that is not a healthy
+ * #ash Mesh snapshot, and any upload name that is not a bare media filename.
+ */
+export function inspectArchive(file) {
+  if (!file || !fs.existsSync(file)) throw httpError(400, 'No archive was received.');
+
+  const entries = readZipDirectory(file);
+  const byName = new Map();
+  for (const entry of entries) {
+    if (entry.isDirectory) continue;
+    const parts = entry.name.split('/');
+    if (entry.name.includes('\\') || entry.name.startsWith('/') || parts.includes('..') || entry.name.includes('\u0000')) {
+      throw httpError(400, `The archive contains an unsafe path (${entry.name}).`);
+    }
+    if (byName.has(entry.name)) throw httpError(400, `The archive contains a duplicate entry (${entry.name}).`);
+    byName.set(entry.name, entry);
+  }
+
+  const manifestEntry = byName.get('manifest.json');
+  if (!manifestEntry) throw httpError(400, 'The archive has no manifest.json, so it is not an #ash Mesh export.');
+  if (manifestEntry.uncompSize > 4 * 1024 * 1024) throw httpError(400, 'The archive manifest is unexpectedly large.');
+
+  const work = fs.mkdtempSync(path.join(os.tmpdir(), 'ash-archive-inspect-'));
+  let manifest;
+  try {
+    const manifestPath = path.join(work, 'manifest.json');
+    extractZipEntry(file, manifestEntry, manifestPath);
+    manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  } catch (err) {
+    if (err.status) throw err;
+    throw httpError(400, `The archive manifest could not be read: ${err.message}`);
+  } finally {
+    fs.rmSync(work, { recursive: true, force: true });
+  }
+
+  if (!manifest || typeof manifest !== 'object' || !String(manifest.format || '').startsWith('ash-mesh-export/')) {
+    throw httpError(400, 'That ZIP is not an #ash Mesh export archive.');
+  }
+
+  const databaseEntries = [...byName.values()].filter((entry) => /^database\/[^/]+\.db$/.test(entry.name));
+  if (databaseEntries.length !== 1) {
+    throw httpError(400, 'The archive must contain exactly one database/<snapshot>.db file.');
+  }
+
+  const uploads = [];
+  for (const entry of byName.values()) {
+    if (!entry.name.startsWith('uploads/')) continue;
+    const name = safeUploadName(entry.name.slice('uploads/'.length));
+    if (!name) throw httpError(400, `The archive contains an unsafe media filename (${entry.name}).`);
+    uploads.push({ name, entry });
+  }
+
+  return { manifest, database: databaseEntries[0], uploads, format: String(manifest.format) };
+}
+
+/** Copy staged media into UPLOAD_DIR, journalling every file so a failure can be undone. */
+function applyMediaFiles(stagingUploads, workDir) {
+  const journal = { rollbackDir: path.join(workDir, 'media-rollback'), applied: [], replaced: [], created: [] };
+  fs.mkdirSync(journal.rollbackDir, { recursive: true });
+  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
+  const names = fs
+    .readdirSync(stagingUploads)
+    .filter((name) => fs.statSync(path.join(stagingUploads, name)).isFile());
+
+  for (const name of names) {
+    const source = path.join(stagingUploads, name);
+    const target = path.join(UPLOAD_DIR, name);
+    const existed = fs.existsSync(target);
+    if (existed) {
+      // Keep the current bytes: if the database step fails, the original media comes back.
+      fs.copyFileSync(target, path.join(journal.rollbackDir, name));
+      journal.replaced.push(name);
+    }
+    const temp = path.join(UPLOAD_DIR, `.restore-${crypto.randomBytes(8).toString('hex')}.tmp`);
+    fs.copyFileSync(source, temp);
+    fs.renameSync(temp, target);
+    journal.applied.push(name);
+    if (!existed) journal.created.push(name);
+  }
+  return journal;
+}
+
+/** Undo applyMediaFiles(): restore overwritten bytes and remove files the restore created. */
+function rollbackMedia(journal) {
+  const result = { restored: [], removed: [], failed: [] };
+  for (const name of journal.applied.slice().reverse()) {
+    const target = path.join(UPLOAD_DIR, name);
+    try {
+      if (journal.replaced.includes(name)) {
+        fs.copyFileSync(path.join(journal.rollbackDir, name), target);
+        result.restored.push(name);
+      } else {
+        fs.rmSync(target, { force: true });
+        result.removed.push(name);
+      }
+    } catch (err) {
+      result.failed.push(`${name}: ${err.message}`);
+    }
+  }
+  for (const leftover of fs.existsSync(UPLOAD_DIR) ? fs.readdirSync(UPLOAD_DIR) : []) {
+    if (leftover.startsWith('.restore-') && leftover.endsWith('.tmp')) {
+      fs.rmSync(path.join(UPLOAD_DIR, leftover), { force: true });
+    }
+  }
+  return result;
+}
+
+/**
+ * Restore a downloaded export archive: database rows AND uploaded media.
+ *
+ * Order matters. Everything is extracted and verified in a staging directory first, so a bad
+ * archive is refused before a single live byte changes. A pre-restore safety snapshot is then
+ * written, media is applied with a journal, and only then is the database restored. If any
+ * later step fails, the media journal is replayed and the database is rolled back to the
+ * safety snapshot, so the live state is left as it was.
+ */
+export function restoreArchive(zipPath, { actorId = null, sessionId = null, ip = '', filename = '' } = {}) {
+  const plan = inspectArchive(zipPath);
+  const work = fs.mkdtempSync(path.join(os.tmpdir(), 'ash-archive-restore-'));
+
+  try {
+    const stagedDb = path.join(work, 'restore.db');
+    extractZipEntry(zipPath, plan.database, stagedDb);
+
+    const head = Buffer.alloc(16);
+    const handle = fs.openSync(stagedDb, 'r');
+    try {
+      fs.readSync(handle, head, 0, 16, 0);
+    } finally {
+      fs.closeSync(handle);
+    }
+    if (head.toString('latin1') !== 'SQLite format 3\u0000') {
+      throw httpError(400, 'The archive does not contain a SQLite database.');
+    }
+
+    const inspection = inspectDatabaseFile(stagedDb);
+    if (inspection.integrity !== 'ok') throw httpError(400, 'The archived database failed its integrity check, so nothing was restored.');
+    if (!inspection.tables.includes('users')) throw httpError(400, 'The archived database is not an #ash Mesh database (no accounts table).');
+
+    const databaseSha = sha256File(stagedDb);
+    const recordedSha = plan.manifest?.database?.sha256;
+    if (recordedSha && recordedSha !== databaseSha) {
+      throw httpError(400, 'The archived database does not match the checksum recorded in its manifest.');
+    }
+
+    // Stage the media and prove every file matches the manifest before touching live media.
+    const stagedUploads = path.join(work, 'uploads');
+    fs.mkdirSync(stagedUploads, { recursive: true });
+    const manifestFiles = new Map(
+      (Array.isArray(plan.manifest?.uploads?.files) ? plan.manifest.uploads.files : [])
+        .filter((file) => file && typeof file.name === 'string')
+        .map((file) => [file.name, file])
+    );
+
+    const expected = [];
+    let mediaBytes = 0;
+    for (const item of plan.uploads) {
+      mediaBytes += item.entry.uncompSize;
+      if (mediaBytes > ARCHIVE_MAX_TOTAL_BYTES) {
+        throw httpError(413, 'The archive media is larger than this server accepts.');
+      }
+      const dest = path.join(stagedUploads, item.name);
+      extractZipEntry(zipPath, item.entry, dest);
+      const stat = fs.statSync(dest);
+      const recorded = manifestFiles.get(item.name);
+      if (recorded?.sizeBytes != null && Number(recorded.sizeBytes) !== stat.size) {
+        throw httpError(400, `The archive copy of ${item.name} does not match its manifest size.`);
+      }
+      const digest = sha256File(dest);
+      if (recorded?.sha256 && recorded.sha256 !== digest) {
+        throw httpError(400, `The archive copy of ${item.name} does not match its manifest checksum.`);
+      }
+      expected.push({ name: item.name, sizeBytes: stat.size, sha256: digest });
+    }
+
+    // Nothing above this line changed live state. From here on, everything is reversible.
+    const safety = createBackup({ reason: 'pre-archive-restore', actorId });
+    const journal = applyMediaFiles(stagedUploads, work);
+    let restore = null;
+
+    try {
+      const adopted = adoptUploadedBackup(stagedDb, { actorId });
+      restore = restoreBackup(adopted.name, { actorId, sessionId, ip, source: 'archive' });
+
+      for (const file of expected) {
+        const target = path.join(UPLOAD_DIR, file.name);
+        if (!fs.existsSync(target) || fs.statSync(target).size !== file.sizeBytes) {
+          throw new Error(`${file.name} is missing after the media restore`);
+        }
+        if (sha256File(target) !== file.sha256) {
+          throw new Error(`${file.name} does not match its checksum after the media restore`);
+        }
+      }
+    } catch (err) {
+      const mediaRollback = rollbackMedia(journal);
+      let databaseRollback = 'not needed';
+      if (restore) {
+        try {
+          const rolled = restoreBackup(safety.name, { actorId, ip, source: 'archive-rollback' });
+          databaseRollback = rolled.restoredFrom;
+        } catch (rollbackError) {
+          databaseRollback = `failed: ${rollbackError.message}`;
+        }
+      }
+      audit(actorId, 'backup.restore-archive-failed', 'archive', filename || plan.database.name, {
+        error: err.message,
+        mediaRollback,
+        databaseRollback,
+        safetyBackup: safety.name,
+      }, ip);
+      throw httpError(
+        409,
+        `The archive restore was rolled back and your data is unchanged: ${err.message}. Media restored from the journal: ${mediaRollback.restored.length}, removed: ${mediaRollback.removed.length}.`
+      );
+    }
+
+    audit(actorId, 'backup.restore-archive', 'archive', filename || plan.database.name, {
+      database: plan.database.name,
+      databaseSha256: databaseSha,
+      mediaFiles: expected.length,
+      mediaBytes,
+      rows: restore.rows,
+      integrity: restore.integrity,
+      safetyBackup: safety.name,
+    }, ip);
+
+    return {
+      ...restore,
+      source: 'archive',
+      archive: {
+        name: filename || null,
+        format: plan.format,
+        database: plan.database.name,
+        databaseSha256: databaseSha,
+        integrity: inspection.integrity,
+        rows: inspection.rows,
+        mediaFiles: expected.length,
+        mediaBytes,
+      },
+      media: {
+        restored: expected.length,
+        created: journal.created.length,
+        overwritten: journal.replaced.length,
+        bytes: mediaBytes,
+        directory: path.relative(DATA_DIR, UPLOAD_DIR) || 'uploads',
+      },
+      archiveSafetyBackup: safety.name,
+    };
+  } finally {
+    fs.rmSync(work, { recursive: true, force: true });
+  }
+}
+
 /* -------------------------------- scheduler ------------------------------- */
 
 let timer = null;
