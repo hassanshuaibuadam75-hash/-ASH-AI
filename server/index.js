@@ -6,8 +6,7 @@ import cookieParser from 'cookie-parser';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { ensureFounder } from './db.js';
-import { loadSession, csrfProtection } from './lib.js';
+import { loadSession, csrfProtection, ensureFounderAccount } from './lib.js';
 import authRoutes from './routes-auth.js';
 import socialRoutes from './routes-social.js';
 import chatRoutes from './routes-chat.js';
@@ -117,7 +116,7 @@ app.use((err, req, res, _next) => {
   });
 });
 
-ensureFounder();
+ensureFounderAccount();
 
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`[#ash Mesh] listening on 0.0.0.0:${PORT}`);

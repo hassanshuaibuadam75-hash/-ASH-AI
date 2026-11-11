@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import multer from 'multer';
-import { db, uid, now, parseJSON, audit, UPLOAD_DIR } from './db.js';
+import { db, uid, now, parseJSON, audit, UPLOAD_DIR, DEFAULT_PRIVACY } from './db.js';
 
 export const SESSION_COOKIE = 'ash_session';
 export const CSRF_COOKIE = 'ash_csrf';
@@ -33,6 +33,70 @@ export function verifyPassword(password, stored) {
 }
 
 export const sha256 = (value) => crypto.createHash('sha256').update(value).digest('hex');
+
+/* ------------------------------ founder identity ------------------------------ */
+
+// Bind — or provision — the Founder account from server-side configuration at boot.
+//
+// Founder authority is never derived from a display name, username, email typed into a
+// profile or a chat message: the account is created with role 'founder' and is_founder = 1
+// only from environment configuration that the operator controls. This also keeps the
+// founder able to sign in on a deployment whose database is recreated on each release.
+export function ensureFounderAccount() {
+  const email = (process.env.FOUNDER_EMAIL || '').trim().toLowerCase();
+  if (!email) return null;
+
+  const existing = db
+    .prepare('SELECT id, role, is_founder FROM users WHERE lower(email) = ?')
+    .get(email);
+
+  if (existing) {
+    if (existing.is_founder !== 1 || existing.role !== 'founder') {
+      db.prepare("UPDATE users SET role = 'founder', is_founder = 1 WHERE id = ?").run(existing.id);
+      console.log(`[#ash Mesh] Founder authority bound to account ${existing.id}`);
+    }
+    return existing.id;
+  }
+
+  const password = String(process.env.FOUNDER_PASSWORD || '');
+  if (password.length < 10) {
+    console.log('[#ash Mesh] FOUNDER_PASSWORD (10+ characters) is required to provision the founder account.');
+    return null;
+  }
+
+  const fullName = (process.env.FOUNDER_NAME || 'Hassan Shuaibu Adam').trim();
+  let base = (process.env.FOUNDER_USERNAME || 'thefounder')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_]/g, '');
+  if (base.length < 3) base = 'thefounder';
+
+  let username = base;
+  let suffix = 1;
+  while (db.prepare('SELECT 1 FROM users WHERE lower(username) = ?').get(username)) {
+    suffix += 1;
+    username = `${base}${suffix}`;
+  }
+
+  const id = uid('usr_');
+  db.prepare(
+    `INSERT INTO users (id, email, username, password_hash, full_name, privacy, role, is_founder, created_at, last_seen_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?)`
+  ).run(
+    id,
+    email,
+    username,
+    hashPassword(password),
+    fullName,
+    JSON.stringify(DEFAULT_PRIVACY),
+    'founder',
+    1,
+    now(),
+    now()
+  );
+  console.log(`[#ash Mesh] Founder account provisioned as @${username}`);
+  return id;
+}
 export const randomToken = (bytes = 32) => crypto.randomBytes(bytes).toString('base64url');
 
 /* -------------------------------- sessions ------------------------------- */
