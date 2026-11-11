@@ -31,6 +31,10 @@ export default function FounderEditorPanel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState('');
+  // Publish and rollback are irreversible-looking actions, so they use an explicit inline
+  // confirmation instead of window.confirm: it cannot be silently dismissed by the browser
+  // and it states exactly which version is affected.
+  const [confirming, setConfirming] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -64,13 +68,23 @@ export default function FounderEditorPanel() {
   }
 
   function publish(version) {
-    if (!window.confirm(`Publish version ${version.number} to LIVE for all users?`)) return;
-    act(`/founder/editor/versions/${version.id}/publish`, {}, `publish-${version.id}`, `Version ${version.number} is live.`);
+    setConfirming({ kind: 'publish', version });
   }
 
   function restore(version) {
-    if (!window.confirm(`Roll back to version ${version.number}? This creates a new version and keeps all history.`)) return;
-    act(
+    setConfirming({ kind: 'restore', version });
+  }
+
+  async function confirmAction() {
+    const target = confirming;
+    if (!target) return;
+    setConfirming(null);
+    const { kind, version } = target;
+    if (kind === 'publish') {
+      await act(`/founder/editor/versions/${version.id}/publish`, {}, `publish-${version.id}`, `Version ${version.number} is live.`);
+      return;
+    }
+    await act(
       `/founder/editor/versions/${version.id}/restore`,
       { publish: true },
       `restore-${version.id}`,
@@ -116,6 +130,23 @@ export default function FounderEditorPanel() {
                     <li key={index}>{line}</li>
                   ))}
                 </ul>
+              ) : null}
+              {confirming && confirming.version.id === version.id ? (
+                <div className="banner warn tiny" role="alertdialog" aria-label="Confirm editor action">
+                  <div>
+                    {confirming.kind === 'publish'
+                      ? `Publish version ${version.number} to LIVE for all users?`
+                      : `Roll back to version ${version.number}? This creates a new version and keeps all history.`}
+                  </div>
+                  <div className="editor-actions">
+                    <button type="button" className="btn primary sm" onClick={confirmAction} disabled={!!busy}>
+                      {confirming.kind === 'publish' ? `Yes, publish v${version.number}` : `Yes, roll back to v${version.number}`}
+                    </button>
+                    <button type="button" className="btn ghost sm" onClick={() => setConfirming(null)} disabled={!!busy}>
+                      Cancel
+                    </button>
+                  </div>
+                </div>
               ) : null}
               <div className="editor-actions wrap">
                 <a className="btn ghost sm" href={previewHref} target="_blank" rel="noreferrer">

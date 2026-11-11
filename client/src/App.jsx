@@ -16,6 +16,7 @@ import AI from './pages/AI.jsx';
 import Notifications from './pages/Notifications.jsx';
 import Settings from './pages/Settings.jsx';
 import Founder from './pages/Founder.jsx';
+import FounderEditor from './pages/FounderEditor.jsx';
 import Admin from './pages/Admin.jsx';
 import Academy from './pages/Academy.jsx';
 import Heritage from './pages/Heritage.jsx';
@@ -248,7 +249,7 @@ function Topbar({ unread }) {
   const titles = {
     '/': 'Home', '/friends': 'Friends', '/messages': 'Messages', '/market': 'Marketplace',
     '/ai': '#ash AI', '/notifications': 'Notifications', '/settings': 'Settings',
-    '/founder': 'Founder Dashboard', '/admin': 'Administration',
+    '/founder': 'Founder Dashboard', '/founder/editor': 'Founder Editor', '/admin': 'Administration',
   };
   const title = titles[location.pathname] || (location.pathname.startsWith('/u/') ? 'Profile' : '#ash Mesh');
   const label = !caps ? 'Checking network…' : caps.internet ? 'Internet' : caps.wifiAware || caps.ble ? '#ash Nearby' : 'Offline — queued';
@@ -335,6 +336,7 @@ function Shell() {
           <Route path="/menu" element={<Menu />} />
           <Route path="/u/:username" element={<Profile />} />
           <Route path="/founder" element={user.isFounder ? <Founder /> : <Navigate to="/" replace />} />
+          <Route path="/founder/editor" element={user.isFounder ? <FounderEditor /> : <Navigate to="/" replace />} />
           <Route path="/admin" element={['admin', 'moderator', 'founder'].includes(user.role) ? <Admin /> : <Navigate to="/" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

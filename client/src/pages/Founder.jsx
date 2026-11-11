@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api, formatTime, naira } from '../api.js';
 import { Badge, Empty, Field, Spinner, useToast } from '../ui.jsx';
 import DataBackupsPanel from '../components/DataBackupsPanel.jsx';
@@ -70,6 +71,21 @@ export default function Founder() {
           </div>
         </div>
         <button className="btn ghost sm" onClick={load}>Refresh</button>
+      </div>
+
+      {/* Stage C: the Founder Editor must be findable from the dashboard itself. */}
+      <div className="card" style={{ borderColor: 'var(--line-bright)' }}>
+        <div className="row wrap" style={{ justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+          <div style={{ minWidth: 240 }}>
+            <div className="tiny muted">Founder only</div>
+            <h3 style={{ margin: '4px 0' }}>Founder Editor</h3>
+            <p className="muted small" style={{ margin: 0 }}>
+              Edit page headings, descriptions, sections and theme values. Every change is previewed, needs your
+              explicit approval, is recorded in the audit log, and can be rolled back.
+            </p>
+          </div>
+          <Link className="btn primary" to="/founder/editor">Open Founder Editor</Link>
+        </div>
       </div>
 
       <Section title="People">
