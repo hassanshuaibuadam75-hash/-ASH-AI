@@ -116,6 +116,10 @@ export default function FounderEditorPanel() {
         {versions.map((version) => {
           const firstPage = (version.changeLog && version.changeLog.length ? 'home' : 'home') || 'home';
           const previewHref = `${PAGE_ROUTES[firstPage] || '/'}?preview=${encodeURIComponent(version.id)}`;
+          // Rollback must be possible for every version that is not the one currently live:
+          // gating on status === 'published' hid the button for older published versions, so a
+          // change that had already gone live could never be reverted from this panel.
+          const isLive = !!(data && data.live && data.live.id === version.id);
           return (
             <li key={version.id} className="editor-version">
               <div className="editor-version-head">
@@ -157,7 +161,7 @@ export default function FounderEditorPanel() {
                     {busy === `publish-${version.id}` ? 'Publishing…' : 'Publish to LIVE'}
                   </button>
                 ) : null}
-                {version.status !== 'published' ? (
+                {!isLive ? (
                   <button type="button" className="btn ghost sm" onClick={() => restore(version)} disabled={!!busy}>
                     {busy === `restore-${version.id}` ? 'Restoring…' : 'Roll back to this'}
                   </button>
