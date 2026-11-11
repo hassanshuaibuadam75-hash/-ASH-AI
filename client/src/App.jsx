@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { PageIntro } from './siteconfig.jsx';
 import { Routes, Route, NavLink, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import AssistantFab from './components/AssistantFab.jsx';
 import { ensureIdentity } from './crypto.js';
@@ -229,6 +230,13 @@ function Topbar({ unread }) {
     };
   }, []);
 
+  const INTRO_PAGES = {
+    '/': 'home', '/market': 'market', '/academy': 'academy', '/heritage': 'heritage',
+    '/messages': 'messages', '/friends': 'friends', '/settings': 'settings', '/menu': 'support',
+    '/notifications': 'notifications', '/ai': 'ai',
+  };
+  const introPage = INTRO_PAGES[location.pathname] ||
+    (location.pathname.startsWith('/u/') ? 'profile' : null);
   const titles = {
     '/': 'Home', '/friends': 'Friends', '/messages': 'Messages', '/market': 'Marketplace',
     '/ai': '#ash AI', '/notifications': 'Notifications', '/settings': 'Settings',
@@ -298,6 +306,7 @@ function Shell() {
       <Sidebar unread={unread} />
       <div className="main-col">
         <Topbar unread={unread} />
+        <PageIntro page={introPage} />
         <Routes>
           <Route path="/" element={<Feed />} />
           <Route path="/friends" element={<Friends />} />
