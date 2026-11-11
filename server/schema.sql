@@ -224,7 +224,9 @@ CREATE TABLE IF NOT EXISTS orders (
   created_at         TEXT NOT NULL,
   updated_at         TEXT NOT NULL
 );
-CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_idempotency ON orders(buyer_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
+-- idx_orders_idempotency is created by migrate() in db.js, NOT here: on a database created by
+-- an earlier revision the orders table has no idempotency_key column yet, and this file is
+-- executed before the ALTER TABLE migrations, so an index statement here aborts the boot.
 CREATE INDEX IF NOT EXISTS idx_orders_buyer ON orders(buyer_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_orders_seller ON orders(seller_id, created_at DESC);
 
