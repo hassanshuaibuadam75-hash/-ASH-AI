@@ -76,6 +76,7 @@ Restore and export are rate limited and written to the audit log.
 | POST | `/api/founder/backups/:name/restore` | restore a stored snapshot |
 | POST | `/api/founder/backups/restore-upload` | restore from an uploaded `.db` (≤256 MB) |
 | GET | `/api/founder/export` | one ZIP: snapshot + manifest + all uploaded files |
+| POST | `/api/founder/export/restore` | restore a ZIP export **including uploaded media** |
 
 The Founder UI is **Founder Dashboard → Data & Backups** (`client/src/components/DataBackupsPanel.jsx`),
 with create, verify, download, restore (two-step confirmation), restore-from-file and
@@ -94,12 +95,12 @@ archive download.
 **B. Recover after a redeploy wiped the container (the Free-plan case)**
 
 1. Open the app, sign in as Founder.
-2. Founder Dashboard → Data & Backups → **Restore from file**, choose the `.db` inside your
-   downloaded archive (`database/ash-mesh.db` in the ZIP).
-3. Uploaded files are **not** restored by a database restore — a restore replaces database
-   rows only. Copy the archive's `uploads/` files back through the hosting disk if a
-   persistent disk exists, or re-upload the media the platform must show. This is a real
-   limitation, stated again in §6.
+2. Founder Dashboard → Data & Backups → **Restore from archive (.zip)**, choose the archive
+   you downloaded earlier. This is the complete recovery path: it restores the database rows
+   **and** every uploaded file carried by the archive (see §8).
+3. Confirm the summary dialog. The panel reports rows restored and media files restored.
+4. **Restore from file** (a bare `.db`) still exists for database-only recovery, but it
+   replaces rows only — it cannot write media back. Use the archive unless you have no media.
 
 **C. Verify a backup you have never opened**
 
@@ -115,8 +116,8 @@ fails integrity or whose checksum does not match its sidecar must not be trusted
    Downloading is manual by design and by omission of an external account.
 3. **Restore is whole-database.** There is no per-record restore and no point-in-time
    recovery. Every table present in the snapshot is emptied and refilled.
-4. **Restore does not restore uploaded files.** The archive carries them; a database restore
-   cannot write them back.
+4. **A bare `.db` restore does not restore uploaded files.** The ZIP archive does (§8); a
+   database-only restore cannot write media back.
 5. **A restore rolls the audit log back** to the snapshot's rows. A `backup.restore` entry is
    written after the restore, but events that happened after the snapshot no longer exist.
 6. **Single-process SQLite.** This is appropriate for the current deployment size; it is not a
@@ -156,3 +157,72 @@ safety snapshot *before* opening the snapshot being restored, and creating that 
 snapshot applied retention, which could prune the very file being restored
 (`SQLITE_CANTOPEN`). The restore now copies the source snapshot outside the backup directory
 first, so retention can never delete the file mid-restore.
+
+## 8. Archive (ZIP) restore — rows *and* media
+
+`restoreArchive()` in `server/backup.js`, exposed as `POST /api/founder/export/restore`
+(Founder only, 10 restores/hour) and **Founder Dashboard → Data & Backups → Restore from
+archive (.zip)**.
+
+Order of operations — nothing live is touched until every input has been validated:
+
+1. **Parse and validate the archive.** The ZIP must open, contain a manifest, and declare a
+   format this build understands. Entries are resolved to absolute paths and rejected if
+   they escape the extraction root (ZIP-slip), so `../` can never write outside staging.
+2. **Verify the database copy.** The staged snapshot must be a real SQLite file that passes
+   `PRAGMA integrity_check`; its checksum is compared with the manifest when one is recorded.
+3. **Verify every media file.** Each file listed in the manifest is extracted into a staging
+   directory and hashed; a size or `sha256` mismatch aborts the restore with HTTP 400 before
+   any live file is replaced.
+4. **Take a safety snapshot** (`reason: pre-archive-restore`) so the pre-restore state is
+   recoverable.
+5. **Swap the database** through the same transactional path as a snapshot restore, then
+   **apply the media files** while journaling every create/overwrite so the write can be
+   replayed backwards.
+6. **Roll back on any failure.** If the database step or the media step throws, the media
+   journal is replayed (new files removed, overwritten files restored byte-for-byte), the
+   safety snapshot is restored, the reason is returned as HTTP 409 and the failure is audited
+   as `backup.restore-archive-failed`. The audit entry for success is `backup.restore-archive`.
+
+### Drill evidence — `tests/archive-restore.test.mjs`, **54/54 checks passed**
+
+Runs against a temporary `DATA_DIR` (ports 4611–4613), never LIVE, never production data.
+
+- Two disposable accounts register, one publishes a post with a real uploaded photo, another
+  comments and likes, the pair become friends and exchange an encrypted message.
+- `GET /api/founder/export` returns a ZIP whose manifest lists the database plus each media
+  file with `sizeBytes` and `sha256`; the media bytes are present inside the archive.
+- **Disaster**: the post is deleted, the media files are removed from disk and a later
+  account is created.
+- **Restore**: posting the same ZIP to `/api/founder/export/restore` brings back the post, its
+  comments, the like, the friendship, the conversation with its E2EE envelope, and the media
+  file — which then serves over `GET /api/media/:id` with `200` and `image/png`.
+- Row counts match the snapshot, and the restore is audited.
+- Anonymous callers get 401 and a non-Founder member gets 403.
+- **Failure injection** (`ARCHIVE_RESTORE_FAULT`, only active when `NODE_ENV=test`):
+  - fault after the database swap → 409, database *and* media unchanged, sessions intact;
+  - fault after the media swap → 409, media journal restores the exact original bytes.
+- **Hostile archives** are rejected with 400 and zero live changes: a non-ZIP file, an entry
+  named `uploads/../escape.png`, an archive with no manifest, and an archive whose media
+  checksum does not match.
+
+A defect this drill caught and that is now fixed: the `after-media` fault hook was invoked
+outside the rollback `try`, so a media-stage failure returned a bare HTTP 500 and left the
+journal unreplayed. The hook now runs inside the guarded block, so the same failure returns
+409 and restores the media.
+
+### Browser click-through (Founder Dashboard → Data & Backups)
+
+Verified in Chromium against a disposable `DATA_DIR`: Founder sign-in → Founder Dashboard →
+Data & Backups → **Create snapshot** → **Verify** → **Download archive (.zip)** →
+**Restore** → **Yes, restore this snapshot**. Each step produced its real confirmation
+(`Snapshot created`, `Snapshot verified against its recorded checksum.`, `Archive downloaded.
+Keep it outside the hosting container.`, `Snapshot restored. Accounts, posts and messages are
+back.`) with no page or console errors.
+
+### What is still not automatic
+
+Archive restore is a **manual, Founder-driven** operation. Nothing uploads an archive to
+S3/Drive, and nothing restores one without a human choosing the file, because there is no
+provider credential and no persistent disk on this plan. Disaster recovery is therefore
+**documented and tested, not automatic** — see §6.1 and §6.2.
