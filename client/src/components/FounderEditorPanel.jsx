@@ -6,7 +6,7 @@
 // itself reversible.
 import React, { useCallback, useEffect, useState } from 'react';
 import { api } from '../api.js';
-import { useToast } from '../App.jsx';
+import { useToast } from '../ui.jsx';
 import { PAGE_ROUTES } from '../siteconfig.jsx';
 
 const STATUS_TEXT = {
