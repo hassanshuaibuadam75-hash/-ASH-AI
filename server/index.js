@@ -19,6 +19,7 @@ import moderationRoutes from './routes-moderation.js';
 import syncRoutes from './routes-sync.js';
 import contentRoutes from './routes-content.js';
 import heritageRoutes from './routes-heritage.js';
+import founderEditorRoutes from './routes-founder-editor.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -91,6 +92,7 @@ app.use('/api', moderationRoutes);
 app.use('/api', syncRoutes);
 app.use('/api', contentRoutes);
 app.use('/api', heritageRoutes);
+app.use('/api', founderEditorRoutes);
 
 app.use('/api', (_req, res) => res.status(404).json({ error: 'not_found', message: 'API endpoint not found.' }));
 

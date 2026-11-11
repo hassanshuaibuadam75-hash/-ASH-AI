@@ -403,3 +403,7 @@ export function recentEvents(limit = 30) {
 }
 
 export { applyOps };
+
+// Create the editor tables and the baseline version as soon as the store is loaded, so no
+// request can arrive before the schema exists.
+ensureEditorSchema();

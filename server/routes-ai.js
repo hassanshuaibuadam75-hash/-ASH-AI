@@ -16,6 +16,31 @@ import express from 'express';
 import { db, uid, now } from './db.js';
 import { requireAuth, rateLimit, clean, badRequest } from './lib.js';
 import { groqChat, groqConfigured, groqErrorBody, FRIENDLY_ERRORS, GROQ_MODEL } from './ai-groq.js';
+import * as siteEditor from './site-editor.js';
+import { extractJson } from './site-config.js';
+
+// Extra system instruction appended ONLY for the authenticated Founder. It lets the same
+// @ashai conversation emit an application-edit proposal as structured JSON. The reply is
+// parsed on the server and stored as an inert proposal: the AI can never apply or publish a
+// change, and it can never grant itself authority.
+const FOUNDER_EDITOR_PROMPT = [
+  'FOUNDER EDITOR MODE. The person you are talking to is the Founder and CEO of #ash Mesh, verified by their session.',
+  'They may ask you to change the application itself (page headings, descriptions, added sections, buttons, colours, typography, corner radius).',
+  'When the request is an application edit, reply with ONE JSON object and no prose:',
+  '{"site_edit": true, "summary": "<one sentence describing the change>", "changes": [<operations>]}',
+  'Allowed operations:',
+  '  {"op":"set_text","page":"<page>","field":"heading|subheading","value":"<text>"}',
+  '  {"op":"add_section","page":"<page>","title":"<text>","body":"<text>","ctaLabel":"<text>","ctaHref":"/path"}',
+  '  {"op":"update_section","page":"<page>","sectionId":"<id>","title":"<text>","body":"<text>"}',
+  '  {"op":"remove_section","page":"<page>","sectionId":"<id>"}',
+  '  {"op":"reset_page","page":"<page>"}',
+  '  {"op":"set_theme","key":"accent|accentSoft|bg|surface|text|muted|font|radius","value":"<hex colour, font name or number>"}',
+  'Pages: home, market, academy, heritage, messages, profile, settings, support, friends, notifications, ai.',
+  'Font options: system, serif, mono, rounded. Never invent pages, CSS or HTML.',
+  'To remove a welcome banner or hero text, set that page heading and subheading to "".',
+  'If the request is not an application edit, or cannot be expressed this way, answer normally in plain language (no JSON).',
+  'Never say a change has been applied: the Founder must approve it, then it is applied to TEST and published separately.',
+].join('\n');
 import { commissionRate } from './routes-market.js';
 
 const router = express.Router();
