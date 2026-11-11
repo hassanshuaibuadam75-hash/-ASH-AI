@@ -213,13 +213,18 @@ CREATE TABLE IF NOT EXISTS orders (
   commission_rate    REAL NOT NULL,
   payout_minor       INTEGER NOT NULL,
   currency           TEXT NOT NULL DEFAULT 'NGN',
-  status             TEXT NOT NULL DEFAULT 'pending_payment',
+  status             TEXT NOT NULL DEFAULT 'pending_payment', -- pending_payment | held_founder_review | paid | shipped | completed | cancelled | refunded | rejected
   provider           TEXT NOT NULL DEFAULT 'paystack',
   provider_ref       TEXT,
   delivery_note      TEXT NOT NULL DEFAULT '',
+  idempotency_key    TEXT,                 -- client-generated key: one order per key per buyer
+  review_note        TEXT NOT NULL DEFAULT '',
+  reviewed_by        TEXT,
+  reviewed_at        TEXT,
   created_at         TEXT NOT NULL,
   updated_at         TEXT NOT NULL
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_idempotency ON orders(buyer_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_orders_buyer ON orders(buyer_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_orders_seller ON orders(seller_id, created_at DESC);
 

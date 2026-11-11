@@ -33,6 +33,12 @@ function migrate() {
   }
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_posts_client ON posts(author_id, client_id) WHERE client_id IS NOT NULL');
   db.exec('CREATE INDEX IF NOT EXISTS idx_posts_updated ON posts(updated_at DESC)');
+  // Marketplace integrity (Stage B): idempotent orders and Founder review of held orders.
+  if (!hasColumn('orders', 'idempotency_key')) db.exec('ALTER TABLE orders ADD COLUMN idempotency_key TEXT');
+  if (!hasColumn('orders', 'review_note')) db.exec("ALTER TABLE orders ADD COLUMN review_note TEXT NOT NULL DEFAULT ''");
+  if (!hasColumn('orders', 'reviewed_by')) db.exec('ALTER TABLE orders ADD COLUMN reviewed_by TEXT');
+  if (!hasColumn('orders', 'reviewed_at')) db.exec('ALTER TABLE orders ADD COLUMN reviewed_at TEXT');
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_idempotency ON orders(buyer_id, idempotency_key) WHERE idempotency_key IS NOT NULL');
 }
 migrate();
 
