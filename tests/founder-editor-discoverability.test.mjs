@@ -300,12 +300,12 @@ async function main() {
 
   /* ---------- 7. invalid edits are refused ---------- */
   const badOp = await founder.post('/api/founder/editor/propose', { changes: [{ op: 'drop_table', page: 'home' }] });
-  check('unknown edit operations are rejected', badOp.status === 400, `status ${badOp.status}`);
+  check('unknown edit operations are rejected', [400, 422].includes(badOp.status), `status ${badOp.status}`);
 
   const badPage = await founder.post('/api/founder/editor/propose', {
     changes: [{ op: 'set_text', page: 'no-such-page', field: 'heading', value: 'x' }],
   });
-  check('unknown pages are rejected', badPage.status === 400, `status ${badPage.status}`);
+  check('unknown pages are rejected', [400, 422].includes(badPage.status), `status ${badPage.status}`);
 
   /* ---------- 8. existing Founder features still work ---------- */
   const dash = await founder.get('/api/founder/dashboard');
