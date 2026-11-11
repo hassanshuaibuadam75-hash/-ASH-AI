@@ -10,6 +10,7 @@ const CATEGORIES = ['general', 'electronics', 'phones', 'fashion', 'home', 'vehi
 const STATUS_TONE = {
   pending_payment: 'amber', paid: 'green', shipped: 'green', completed: 'green',
   cancelled: 'grey', refunded: 'grey', disputed: 'amber',
+  held_founder_review: 'amber', rejected: 'grey',
 };
 
 export default function Market() {
@@ -140,6 +141,26 @@ export default function Market() {
       });
       setDetail(null);
       setTab('orders');
+    } catch (err) {
+      toast.push(err.message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reviewOrder(order, decision) {
+    const note = window.prompt(
+      decision === 'approve'
+        ? 'Record the agreed commission or the reason for releasing this order:'
+        : 'Reason for rejecting this held order:'
+    );
+    if (note === null) return;
+    if (!note.trim()) { toast.push('A note is required for the audit record.', 'error'); return; }
+    setBusy(true);
+    try {
+      const data = await api(`/market/orders/${order.id}/review`, { method: 'POST', body: { decision, note: note.trim() } });
+      setOrders((prev) => prev.map((o) => (o.id === order.id ? data.order : o)));
+      toast.push(decision === 'approve' ? 'Order released for payment.' : 'Held order rejected.');
     } catch (err) {
       toast.push(err.message, 'error');
     } finally {
@@ -280,6 +301,10 @@ export default function Market() {
                       <td>{pct(tier.rate)}</td>
                     </tr>
                   ))}
+                  <tr>
+                    <td>Above ₦10,000,000</td>
+                    <td>Held for Founder review</td>
+                  </tr>
                 </tbody>
               </table>
             </div>
@@ -298,11 +323,19 @@ export default function Market() {
                   {order.role === 'buyer' ? `Seller @${order.seller?.username}` : `Buyer @${order.buyer?.username}`} · {formatTime(order.createdAt)}
                 </div>
                 <div className="tiny muted">
-                  {naira(order.amountMinor)} · commission {naira(order.commissionMinor)} ({pct(order.commissionRate)}) · payout {naira(order.payoutMinor)}
+                  {order.commissionHeld
+                    ? `${naira(order.amountMinor)} · held for Founder review — no commission has been calculated`
+                    : `${naira(order.amountMinor)} · commission ${naira(order.commissionMinor)} (${pct(order.commissionRate)}) · payout ${naira(order.payoutMinor)}`}
                 </div>
               </div>
               <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
                 <Badge tone={STATUS_TONE[order.status] || 'grey'}>{order.status.replace(/_/g, ' ')}</Badge>
+                {user.isFounder && order.status === 'held_founder_review' ? (
+                  <>
+                    <button className="btn primary sm" disabled={busy} onClick={() => reviewOrder(order, 'approve')}>Release</button>
+                    <button className="btn ghost sm danger-text" disabled={busy} onClick={() => reviewOrder(order, 'reject')}>Reject</button>
+                  </>
+                ) : null}
                 {order.role === 'buyer' && order.status === 'pending_payment' ? (
                   <button className="btn primary sm" disabled={busy} onClick={() => retryPayment(order)}>Pay now</button>
                 ) : null}
