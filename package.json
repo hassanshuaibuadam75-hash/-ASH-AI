@@ -11,7 +11,7 @@
     "build": "vite build --config client/vite.config.js",
     "start": "node server/index.js",
     "dev": "node server/index.js",
-    "test": "node tests/run-tests.js && node tests/offline-feed.test.mjs && node tests/moderation.test.mjs && node tests/founder-editor.test.mjs && node tests/backup.test.mjs && node tests/archive-restore.test.mjs",
+    "test": "node tests/run-tests.js && node tests/offline-feed.test.mjs && node tests/moderation.test.mjs && node tests/founder-editor.test.mjs && node tests/market-commission.test.mjs && node tests/backup.test.mjs && node tests/archive-restore.test.mjs",
     "test:groq": "node tests/groq-live.mjs",
     "postinstall": "node scripts/check-native.js"
   },
