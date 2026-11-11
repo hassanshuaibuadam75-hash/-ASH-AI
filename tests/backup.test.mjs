@@ -453,6 +453,22 @@ async function main() {
   console.log(`\n#ash Mesh backup drill: ${passed}/${results.length} checks passed`);
   if (failures > 0) {
     console.error(`${failures} check(s) failed`);
+    const tailOf = (p) => {
+      try {
+        if (typeof p?.log === 'function') return String(p.log() || '');
+        if (typeof p?.logs === 'function') return String(p.logs() || '');
+        if (typeof p?.output === 'function') return String(p.output() || '');
+        if (typeof p?.log === 'string') return p.log;
+      } catch {
+        /* log already released */
+      }
+      return '';
+    };
+    const tail = tailOf(phase1).trim().split('\n').slice(-40).join('\n');
+    if (tail) {
+      console.error('--- server log (phase 1, last 40 lines) ---');
+      console.error(tail);
+    }
     process.exit(1);
   }
 }

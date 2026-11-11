@@ -342,7 +342,7 @@ export function restoreBackup(name, { actorId = null, sessionId = null, ip = '',
       } catch {
         /* transaction already closed */
       }
-      throw httpError(500, `The restore was rolled back and your data is unchanged: ${err.message}`);
+      throw httpError(409, `The restore was rolled back and your data is unchanged: ${err.message}`);
     }
   } finally {
     db.pragma('foreign_keys = ON');
