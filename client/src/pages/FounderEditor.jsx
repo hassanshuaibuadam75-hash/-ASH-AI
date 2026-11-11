@@ -114,7 +114,7 @@ export default function FounderEditor() {
     try {
       const data = await api('/founder/editor/propose', {
         method: 'POST',
-        body: JSON.stringify({ changes, summary: describe() }),
+        body: { changes, summary: describe() },
       });
       setProposal(data.proposal);
       toast('Preview ready. Nothing is applied until you approve it.');

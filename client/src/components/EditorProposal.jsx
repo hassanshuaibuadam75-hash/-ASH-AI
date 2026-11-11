@@ -37,7 +37,7 @@ export default function EditorProposal({ initial }) {
     setBusy(label);
     setError('');
     try {
-      const data = await api(path, body ? { method: 'POST', body: JSON.stringify(body) } : undefined);
+      const data = await api(path, body ? { method: 'POST', body } : undefined);
       if (data && data.proposal) setProposal(data.proposal);
       if (data && data.version) setVersion(data.version);
       if (data && data.live) setLiveVersion(data.live);

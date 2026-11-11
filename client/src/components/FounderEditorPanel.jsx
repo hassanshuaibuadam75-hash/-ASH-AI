@@ -57,7 +57,7 @@ export default function FounderEditorPanel() {
     setBusy(label);
     setError('');
     try {
-      await api(path, { method: 'POST', body: JSON.stringify(body || {}) });
+      await api(path, { method: 'POST', body: body || {} });
       toast(successMessage);
       await load();
     } catch (err) {
