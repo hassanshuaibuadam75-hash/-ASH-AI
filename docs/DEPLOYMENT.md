@@ -100,3 +100,29 @@ device exists in this build environment.
 With a persistent disk: snapshot `DATA_DIR` (SQLite file plus `uploads/`). Use `sqlite3
 ash-mesh.db ".backup out.db"` for a consistent copy while the server runs. Without a persistent
 disk there is nothing durable to back up — fix storage first.
+
+## Data durability (Stage A)
+
+The database is one SQLite file (`DATA_DIR/ash-mesh.db`, WAL) and uploads live in
+`DATA_DIR/uploads`. On the Free plan neither survives a redeploy, so durability depends on
+off-platform archives.
+
+- The server writes a snapshot at boot + interval and keeps the newest `BACKUP_RETENTION`
+  (`VACUUM INTO`, so a live WAL database is copied consistently). Each snapshot has a sidecar
+  with its sha256, row counts and integrity result.
+- `GET /api/founder/export` returns one ZIP (snapshot + manifest + all uploads). **Download it
+  before every deploy.** It is the only copy that survives a rebuild on this plan.
+- Recovery: Founder Dashboard → Data & Backups → Restore, or "Restore from file" with the
+  `.db` from an archive. A restore is transactional, takes a pre-restore safety snapshot and
+  rolls back (HTTP 409) instead of damaging data.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `BACKUP_DIR` | `DATA_DIR/backups` | snapshot directory |
+| `BACKUP_RETENTION` | `14` | newest N snapshots kept (2–60) |
+| `BACKUP_INTERVAL_MINUTES` | `360` | scheduled interval (5–1440) |
+| `BACKUP_INITIAL_DELAY_MS` | `15000` | first scheduled snapshot delay |
+| `BACKUP_SCHEDULER` | on | `off` disables the scheduler |
+
+Durable storage on the server itself needs a persistent disk (Starter/Pro). Full detail,
+limitations and drill evidence: `docs/BACKUP.md`.

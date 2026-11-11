@@ -61,3 +61,16 @@ Honest separation, as required. Nothing here is marked "done" without evidence.
    verified safety numbers are not implemented.
 4. **Moderation at scale.** Reports and admin actions are manual; no automated classifier runs
    over user content.
+
+## Data durability and recovery
+
+- Automatic snapshots (`VACUUM INTO`) with checksum sidecars, integrity verification and
+  retention — implemented and verified.
+- Founder-only list / create / verify / download / restore / restore-from-upload / ZIP export
+  (snapshot + all uploads), all audited and rate limited — implemented and verified.
+- Founder Dashboard → **Data & Backups** panel with two-step restore confirmation —
+  implemented.
+- Restore is transactional and takes a pre-restore safety snapshot; it rolls back with a clear
+  reason instead of damaging data — verified.
+- Off-platform durability on the Free plan is a manual download: no persistent disk and no
+  external backup provider is configured. See `docs/BACKUP.md`.
