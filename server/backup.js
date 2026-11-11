@@ -315,6 +315,7 @@ export function restoreBackup(name, { actorId = null, sessionId = null, ip = '',
     try {
       for (const table of inspection.tables) {
         if (!liveTables.has(table)) continue; // a newer snapshot may know tables this build does not
+        if (/^sqlite_/i.test(table)) continue; // internal tables (sqlite_sequence) are not user data
         const liveColumns = new Set(db.prepare(`PRAGMA table_info(${quoteIdent(table)})`).all().map((c) => c.name));
         const columns = sourceDb
           .prepare(`PRAGMA table_info(${quoteIdent(table)})`)

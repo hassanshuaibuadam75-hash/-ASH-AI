@@ -147,7 +147,7 @@ class Client {
 
   get(p) { return this.req('GET', p); }
   post(p, b) { return this.req('POST', p, b); }
-  del(p) { return this.req('DELETE', p); }
+  del(p, body = { confirm: true }) { return this.req('DELETE', p, body); }
 
   async upload(endpoint, buffer, filename, type = 'application/octet-stream') {
     const form = new FormData();
@@ -274,7 +274,8 @@ async function main() {
 
   const reqRes = await member.post('/api/friends/request', { userId: friendId });
   const incoming = await friend.get('/api/friends/requests');
-  const requestId = (incoming.body?.requests || [])[0]?.id;
+  const requestId = (incoming.body?.incoming || incoming.body?.requests || [])[0]?.requestId
+    || (incoming.body?.incoming || incoming.body?.requests || [])[0]?.id;
   const accept = await friend.post(`/api/friends/${requestId}/accept`, {});
   check('friendship is accepted', reqRes.status === 201 && accept.status === 200 && !!requestId, `request=${reqRes.status} accept=${accept.status}`);
 
@@ -296,6 +297,11 @@ async function main() {
   check('snapshot passed its own integrity check', meta?.integrity === 'ok', `integrity=${meta?.integrity}`);
   check('snapshot records a checksum, size and row counts', /^[0-9a-f]{64}$/.test(meta?.sha256 || '') && meta?.sizeBytes > 0 && meta?.rows > 0 && (meta?.counts?.users ?? 0) >= 3, JSON.stringify(meta?.counts || {}).slice(0, 200));
   check('snapshot file and its checksum sidecar exist on disk', fs.existsSync(path.join(backupsDir, meta?.name || 'missing')) && fs.existsSync(path.join(backupsDir, `${meta?.name}.json`)), 'sidecar missing');
+
+  // Recorded here, not after the restores: a restore replaces audit_logs with the snapshot's
+  // rows, so the create event only exists before a restore runs.
+  const auditAfterCreate = await founder.get('/api/admin/audit');
+  check('creating a snapshot is recorded in the audit log', auditAfterCreate.status === 200 && /backup\.create/.test(auditAfterCreate.text), `status=${auditAfterCreate.status}`);
 
   const verified = await founder.post(`/api/founder/backups/${meta.name}/verify`, {});
   check('founder re-verifies the snapshot against its recorded checksum', verified.status === 200 && verified.text.includes(meta.sha256), `status=${verified.status} ${verified.text.slice(0, 200)}`);
@@ -352,7 +358,7 @@ async function main() {
 
   const likesAfter = await founder.get(`/api/posts/${postId}/likes`);
   const likesBody = likesAfter.body || {};
-  const likeCount = Array.isArray(likesBody.likes) ? likesBody.likes.length : Array.isArray(likesBody) ? likesBody.length : likesBody.count;
+  const likeCount = Array.isArray(likesBody.users) ? likesBody.users.length : Array.isArray(likesBody.likes) ? likesBody.likes.length : Array.isArray(likesBody) ? likesBody.length : likesBody.count;
   check('restored like is intact', likeCount === 1, `count=${likeCount}`);
 
   const friendsAfter = await member.get('/api/friends');
@@ -414,7 +420,7 @@ async function main() {
   /* ---- audit trail and secret hygiene ---- */
 
   const auditRes = await founder.get('/api/admin/audit');
-  check('backup and restore actions are recorded in the audit log', auditRes.status === 200 && /backup\.create/.test(auditRes.text) && /backup\.restore/.test(auditRes.text), `status=${auditRes.status}`);
+  check('restore actions are recorded in the audit log', auditRes.status === 200 && /backup\.restore/.test(auditRes.text), `status=${auditRes.status}`);
   check('backup responses never expose credentials', !statusAfter.text.includes(FOUNDER_PASSWORD) && !/GROQ_API_KEY/.test(statusAfter.text) && !/DB_PATH/.test(statusAfter.text), 'a credential appeared in the response');
 
   await phase1.stop();
