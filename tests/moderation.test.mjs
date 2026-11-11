@@ -96,6 +96,8 @@ const server = spawn(process.execPath, ['server/index.js'], {
     DATA_DIR,
     DB_PATH: path.join(DATA_DIR, 'test.db'),
     FOUNDER_EMAIL,
+    // Keep this instance independent of any ambient FOUNDER_PASSWORD in the environment.
+    FOUNDER_PASSWORD: '',
   },
   stdio: ['ignore', 'pipe', 'pipe'],
 });

@@ -95,6 +95,10 @@ const server = spawn(process.execPath, ['server/index.js'], {
     DB_PATH: path.join(DATA_DIR, 'test.db'),
     FORCE_INSECURE_COOKIES: '1',
     FOUNDER_EMAIL,
+    // Ambient Founder credentials from the operator's environment must not leak into this
+    // isolated test instance: without this, boot provisioning creates the Founder before the
+    // suite registers it, and every later step fails on a duplicate email.
+    FOUNDER_PASSWORD: '',
     GROQ_API_KEY: '',
     PAYSTACK_SECRET_KEY: '',
     RESEND_API_KEY: '',

@@ -101,7 +101,7 @@ async function waitReady(base = BASE, deadlineMs = 30000) {
 
 const server = spawn(process.execPath, ['server/index.js'], {
   cwd: ROOT,
-  env: { ...process.env, PORT: String(PORT), DATA_DIR, FOUNDER_EMAIL, GROQ_API_KEY: '' },
+  env: { ...process.env, PORT: String(PORT), DATA_DIR, FOUNDER_EMAIL, FOUNDER_PASSWORD: '', GROQ_API_KEY: '' },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 let serverLog = '';
