@@ -129,7 +129,12 @@ export function createBackup({ reason = 'manual', actorId = null } = {}) {
   // VACUUM INTO writes a consistent copy of a live WAL database; a plain file copy can miss
   // committed pages that still live in the -wal file.
   db.prepare('VACUUM INTO ?').run(target);
+  return finalizeSnapshot(name, { reason, actorId });
+}
 
+/** Re-open a written snapshot, prove it is healthy, record its checksum and apply retention. */
+function finalizeSnapshot(name, { reason, actorId }) {
+  const target = path.join(BACKUP_DIR, name);
   let inspection;
   try {
     inspection = inspectDatabaseFile(target);
@@ -209,6 +214,45 @@ export function resolveBackupPath(name) {
   if (path.dirname(resolved) !== BACKUP_DIR) throw httpError(400, 'That backup path is not allowed.');
   if (!fs.existsSync(resolved)) throw httpError(404, 'That backup no longer exists.');
   return resolved;
+}
+
+/**
+ * Adopt an uploaded .db file as a stored snapshot. The file is untrusted input: its SQLite
+ * header is checked, then it is re-opened and must pass an integrity check before it can be
+ * used as a restore source.
+ */
+export function adoptUploadedBackup(tempPath, { actorId = null } = {}) {
+  if (!tempPath || !fs.existsSync(tempPath)) throw httpError(400, 'No database file was received.');
+
+  const fd = fs.openSync(tempPath, 'r');
+  const head = Buffer.alloc(16);
+  try {
+    fs.readSync(fd, head, 0, 16, 0);
+  } finally {
+    fs.closeSync(fd);
+  }
+  if (head.toString('latin1') !== 'SQLite format 3\u0000') {
+    throw httpError(400, 'That file is not a SQLite database.');
+  }
+
+  fs.mkdirSync(BACKUP_DIR, { recursive: true });
+  const name = uniqueName();
+  const target = path.join(BACKUP_DIR, name);
+  fs.copyFileSync(tempPath, target);
+
+  try {
+    const inspection = inspectDatabaseFile(target);
+    if (inspection.integrity !== 'ok' || !inspection.tables.includes('users')) {
+      fs.rmSync(target, { force: true });
+      throw httpError(400, 'That database is not a healthy #ash Mesh backup.');
+    }
+  } catch (err) {
+    fs.rmSync(target, { force: true });
+    if (err.status) throw err;
+    throw httpError(400, `That database could not be read: ${err.message}`);
+  }
+
+  return finalizeSnapshot(name, { reason: 'uploaded', actorId });
 }
 
 /** Re-verify a stored snapshot: integrity check, schema, and sidecar checksum match. */

@@ -19,6 +19,8 @@ import syncRoutes from './routes-sync.js';
 import contentRoutes from './routes-content.js';
 import heritageRoutes from './routes-heritage.js';
 import founderEditorRoutes from './routes-founder-editor.js';
+import backupRoutes from './routes-backup.js';
+import { startBackupScheduler, BACKUP_DIR, BACKUP_INTERVAL_MINUTES } from './backup.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -92,6 +94,7 @@ app.use('/api', syncRoutes);
 app.use('/api', contentRoutes);
 app.use('/api', heritageRoutes);
 app.use('/api', founderEditorRoutes);
+app.use('/api', backupRoutes);
 
 app.use('/api', (_req, res) => res.status(404).json({ error: 'not_found', message: 'API endpoint not found.' }));
 
@@ -118,11 +121,15 @@ app.use((err, req, res, _next) => {
 
 ensureFounderAccount();
 
+// Automatic snapshots. The interval is server configuration, never a client value.
+startBackupScheduler();
+
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`[#ash Mesh] listening on 0.0.0.0:${PORT}`);
   if (!process.env.GROQ_API_KEY) console.log('[#ash Mesh] #ash AI: GROQ_API_KEY not set — assistant reports as not configured.');
   if (!process.env.PAYSTACK_SECRET_KEY) console.log('[#ash Mesh] Payments: PAYSTACK_SECRET_KEY not set — orders recorded as pending payment.');
   if (!process.env.RESEND_API_KEY) console.log('[#ash Mesh] Email: RESEND_API_KEY not set — password reset links are not emailed.');
+  console.log(`[#ash Mesh] Backups: every ${BACKUP_INTERVAL_MINUTES} minutes into ${BACKUP_DIR} (not durable on this plan — download an archive).`);
 });
 
 for (const signal of ['SIGTERM', 'SIGINT']) {
