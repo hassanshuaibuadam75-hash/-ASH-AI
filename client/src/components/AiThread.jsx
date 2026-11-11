@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api.js';
 import { useAuth } from '../App.jsx';
+import ProposalInbox from './ProposalInbox.jsx';
+import FounderEditorPanel from './FounderEditorPanel.jsx';
 
 // The one and only @ashai conversation.
 //
@@ -67,6 +69,8 @@ export default function AiThread({ compact = false }) {
   const userId = user?.id;
   const [messages, setMessages] = useState(() => (userId ? readCache(userId) : []));
   const [pending, setPending] = useState(() => (userId ? readPending(userId) : []));
+  const [editorAllowed, setEditorAllowed] = useState(false);
+  const [showEditor, setShowEditor] = useState(false);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
@@ -83,6 +87,17 @@ export default function AiThread({ compact = false }) {
     if (!userId) return;
     setMessages(readCache(userId));
     setPending(readPending(userId));
+  }, [userId]);
+
+  // The editor is offered only when the server confirms Founder authority. A non-Founder
+  // gets 403 here, so the controls never even render for them.
+  useEffect(() => {
+    if (!userId) return undefined;
+    let alive = true;
+    api('/founder/editor/status')
+      .then(() => { if (alive) setEditorAllowed(true); })
+      .catch(() => { if (alive) setEditorAllowed(false); });
+    return () => { alive = false; };
   }, [userId]);
 
   // Auto-scroll only when the reader is already at the bottom, so reading older messages is
@@ -240,7 +255,19 @@ export default function AiThread({ compact = false }) {
           <div className="tiny muted">@{'ashai'} · {online ? 'Online' : 'Offline'}</div>
         </div>
         <span className={`dot ${online ? 'ok' : 'off'}`} aria-hidden="true" />
+        {editorAllowed ? (
+          <button
+            type="button"
+            className="btn ghost sm"
+            onClick={() => setShowEditor((v) => !v)}
+            title="Founder app editor"
+          >
+            {showEditor ? 'Hide editor' : 'Editor'}
+          </button>
+        ) : null}
       </div>
+      {editorAllowed ? <ProposalInbox enabled={editorAllowed} /> : null}
+      {editorAllowed && showEditor ? <FounderEditorPanel /> : null}
 
       <div className="ai-thread-scroll" ref={scrollRef} onScroll={onScroll} role="log" aria-live="polite">
         {empty ? (

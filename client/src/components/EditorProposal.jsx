@@ -6,7 +6,7 @@
 // step. Every state shown comes from the server, never from optimistic UI.
 import React, { useState } from 'react';
 import { api } from '../api.js';
-import { useToast } from '../App.jsx';
+import { useToast } from '../ui.jsx';
 import { PAGE_ROUTES } from '../siteconfig.jsx';
 
 const STATUS_LABELS = {
