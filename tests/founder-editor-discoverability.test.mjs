@@ -222,14 +222,15 @@ async function main() {
   /* ---------- 3. explicit approval writes a TEST draft only ---------- */
   const apply = await founder.post(`/api/founder/editor/proposals/${proposal.id}/apply`, {});
   check('explicit Founder approval applies the change', apply.status === 200, `status ${apply.status}`);
-  const appliedDraft = apply.data && apply.data.draft;
-  check('approval creates a new draft version', !!appliedDraft && appliedDraft.id !== (draft0 && draft0.id), JSON.stringify(appliedDraft && appliedDraft.id));
+  const appliedDraft = (apply.data && (apply.data.version || apply.data.draft)) || null;
+  const appliedDraftId = appliedDraft && appliedDraft.id;
+  check('approval creates a new draft version', !!appliedDraftId && appliedDraftId !== (draft0 && draft0.id), JSON.stringify(appliedDraftId));
   check('approval alone does not publish to users', !!apply.data && apply.data.live && apply.data.live.id === (live0 && live0.id), JSON.stringify(apply.data && apply.data.live));
 
   const publicAfterApply = await anon.get('/api/site-config');
   check('public site still unchanged after approval (draft only)', headingOf(publicAfterApply.data.config, 'home') === baseline);
 
-  const preview = await founder.get(`/api/site-config?version=${appliedDraft.id}`);
+  const preview = appliedDraftId ? await founder.get(`/api/site-config?version=${appliedDraftId}`) : { status: 0, data: null };
   check('Founder can preview the unpublished draft', preview.status === 200 && headingOf(preview.data.config, 'home') === NEW_HEADING, `status ${preview.status}`);
   check('draft preview is marked as a preview', preview.data && preview.data.preview === true);
 
@@ -245,7 +246,7 @@ async function main() {
   check('re-applying does not create a second version', (versionsAfterDup.data.versions || []).length === (versionsBeforeDup.data.versions || []).length, `${(versionsBeforeDup.data.versions || []).length} -> ${(versionsAfterDup.data.versions || []).length}`);
 
   /* ---------- 5. publish, then roll back ---------- */
-  const publish = await founder.post(`/api/founder/editor/versions/${appliedDraft.id}/publish`, {});
+  const publish = appliedDraftId ? await founder.post(`/api/founder/editor/versions/${appliedDraftId}/publish`, {}) : { status: 0 };
   check('Founder can publish the approved draft', publish.status === 200, `status ${publish.status}`);
   const publicPublished = await anon.get('/api/site-config');
   check('published change is visible on the public site', headingOf(publicPublished.data.config, 'home') === NEW_HEADING, headingOf(publicPublished.data.config, 'home'));
@@ -279,10 +280,10 @@ async function main() {
   const memberEvents = await member.get('/api/founder/editor/events');
   check('ordinary members cannot read the editor audit trail', memberEvents.status === 403, `status ${memberEvents.status}`);
 
-  const memberPreview = await member.get(`/api/site-config?version=${appliedDraft.id}`);
+  const memberPreview = await member.get(`/api/site-config?version=${appliedDraftId}`);
   check('ordinary members cannot preview unpublished drafts', memberPreview.status === 403, `status ${memberPreview.status}`);
 
-  const memberPublish = await member.post(`/api/founder/editor/versions/${appliedDraft.id}/publish`, {});
+  const memberPublish = await member.post(`/api/founder/editor/versions/${appliedDraftId}/publish`, {});
   check('ordinary members cannot publish versions', memberPublish.status === 403, `status ${memberPublish.status}`);
 
   const memberRestore = await member.post(`/api/founder/editor/versions/${live0.id}/restore`, { publish: true });
