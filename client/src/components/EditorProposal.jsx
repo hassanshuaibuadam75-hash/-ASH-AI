@@ -20,13 +20,16 @@ function pageHref(pages) {
   return PAGE_ROUTES[first] || '/';
 }
 
-export default function EditorProposal({ initial }) {
+export default function EditorProposal({ initial, onChanged }) {
   const toast = useToast();
   const [proposal, setProposal] = useState(initial);
   const [version, setVersion] = useState(null);
   const [liveVersion, setLiveVersion] = useState(null);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
+  // Publishing is the only action here that reaches real users, so it asks for an explicit
+  // second click and names the consequence instead of relying on window.confirm.
+  const [confirmPublish, setConfirmPublish] = useState(false);
 
   if (!proposal) return null;
 
@@ -44,6 +47,7 @@ export default function EditorProposal({ initial }) {
       if (data && data.config && data.version) {
         // Preview page picked up a fresh draft: reload so the provider re-reads it.
       }
+      if (onChanged) onChanged();
       return data;
     } catch (err) {
       setError(err.message || 'That action could not be completed.');
@@ -71,7 +75,11 @@ export default function EditorProposal({ initial }) {
 
   async function publish() {
     if (!draftId) return;
-    if (!window.confirm('Publish this change to LIVE for all #ash Mesh users?')) return;
+    if (!confirmPublish) {
+      setConfirmPublish(true);
+      return;
+    }
+    setConfirmPublish(false);
     const data = await call(`/founder/editor/versions/${draftId}/publish`, {}, 'publish');
     if (data && data.version) toast.push(`Published to LIVE as version ${data.version.number}.`, 'success');
   }
@@ -122,8 +130,18 @@ export default function EditorProposal({ initial }) {
           ) : null}
           {version && version.status !== 'published' ? (
             <button type="button" className="btn primary sm" onClick={publish} disabled={!!busy}>
-              {busy === 'publish' ? 'Publishing…' : 'Publish to LIVE'}
+              {busy === 'publish' ? 'Publishing…' : confirmPublish ? 'Yes, publish this change' : 'Publish to LIVE'}
             </button>
+          ) : null}
+          {confirmPublish ? (
+            <button type="button" className="btn ghost sm" onClick={() => setConfirmPublish(false)} disabled={!!busy}>
+              Cancel
+            </button>
+          ) : null}
+          {confirmPublish ? (
+            <p className="muted tiny">
+              Publishing makes this draft the LIVE version for every user. Every version is kept and can be rolled back.
+            </p>
           ) : null}
           {version && version.status === 'published' ? (
             <span className="editor-live-note">Live as version {version.number}</span>

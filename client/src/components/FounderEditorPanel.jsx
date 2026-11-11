@@ -25,7 +25,7 @@ function when(value) {
   }
 }
 
-export default function FounderEditorPanel() {
+export default function FounderEditorPanel({ onChanged }) {
   const toast = useToast();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -60,6 +60,8 @@ export default function FounderEditorPanel() {
       await api(path, { method: 'POST', body: body || {} });
       toast.push(successMessage, 'success');
       await load();
+      // The page-level audit trail and version list live in the parent, so tell it to reload.
+      if (onChanged) onChanged();
     } catch (err) {
       setError(err.message || 'That action could not be completed.');
     } finally {

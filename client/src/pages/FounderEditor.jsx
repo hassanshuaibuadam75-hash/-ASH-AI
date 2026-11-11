@@ -255,7 +255,7 @@ export default function FounderEditor() {
           until you publish, and every version can be rolled back.
         </p>
         {proposal ? (
-          <EditorProposal initial={proposal} />
+          <EditorProposal initial={proposal} onChanged={load} />
         ) : (
           <Empty title="No change previewed yet" hint="Choose an edit above and press Preview change." />
         )}
@@ -268,7 +268,7 @@ export default function FounderEditor() {
           Every applied change is kept as its own version, so a rollback restores the previous value without deleting
           history.
         </p>
-        <FounderEditorPanel />
+        <FounderEditorPanel onChanged={load} />
       </div>
 
       <div className="card">
