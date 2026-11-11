@@ -332,6 +332,51 @@ if (bootReady) {
   });
   check('provisioned founder can propose a change', ceoPropose.status === 201, `status ${ceoPropose.status}`);
 
+  // An authorised editing action, performed by the account the server provisioned from
+  // configuration — not by a manually promoted row.
+  const bootProposal = ceoPropose.data?.proposal;
+  const bootApply = await ceo.post(`/api/founder/editor/proposals/${bootProposal?.id}/apply`, {});
+  check(
+    'provisioned founder applies an authorised edit to the TEST draft',
+    bootApply.status === 200 && bootApply.data?.version?.status === 'draft',
+    `status ${bootApply.status}`
+  );
+
+  const bootDraftId = bootApply.data?.version?.id;
+  const bootPreview = await ceo.get(`/api/site-config?version=${bootDraftId}`);
+  check(
+    'provisioned founder can preview their own draft',
+    bootPreview.status === 200 && bootPreview.data?.config?.pages?.home?.heading === 'Provisioned Founder',
+    `status ${bootPreview.status}`
+  );
+
+  await ceo.post(`/api/founder/editor/versions/${bootDraftId}/tested`, {});
+  const bootPublish = await ceo.post(`/api/founder/editor/versions/${bootDraftId}/publish`, {});
+  check(
+    'provisioned founder publishes the edit to LIVE',
+    bootPublish.status === 200 && bootPublish.data?.version?.status === 'published',
+    `status ${bootPublish.status}`
+  );
+
+  const bootLive = await new Client('boot-anon', bootBase).get('/api/site-config');
+  check(
+    'the published edit is served to the public site config',
+    bootLive.data?.config?.pages?.home?.heading === 'Provisioned Founder',
+    bootLive.data?.config?.pages?.home?.heading
+  );
+
+  // Sign-in must stay a real password check: a wrong password is refused and creates no session.
+  const wrongClient = new Client('boot-wrong', bootBase);
+  const wrongLogin = await wrongClient.post('/api/auth/login', { email: bootEmail, password: 'WrongFounderPass123!' });
+  check('a wrong founder password is refused', wrongLogin.status === 401, `status ${wrongLogin.status}`);
+  const wrongMe = await wrongClient.get('/api/auth/me');
+  check('a refused founder sign-in creates no session', wrongMe.data?.user === null, JSON.stringify(wrongMe.data));
+
+  // The configured password must never be readable through any API response.
+  const bodies = JSON.stringify([ceoLogin.data, ceoStatus.data, bootApply.data, bootPreview.data, bootLive.data, wrongLogin.data]);
+  check('no API response exposes the founder password', !bodies.includes(bootPassword), 'password absent from responses');
+  check('no API response exposes a password hash field', !bodies.includes('password_hash'), 'no hash field');
+
   const bootMember = new Client('boot-member', bootBase);
   const memberReg = await bootMember.post('/api/auth/register', {
     email: 'boot-member@ashmesh.test',
@@ -342,6 +387,10 @@ if (bootReady) {
   check('a second account registers on the same instance', memberReg.status < 300, `status ${memberReg.status}`);
   const memberStatus = await bootMember.get('/api/founder/editor/status');
   check('the second account is refused editor access', memberStatus.status === 403, `status ${memberStatus.status}`);
+
+  // Server logs are visible to operators, so they must never contain the password value.
+  check('server log never prints the founder password', !bootLog.includes(bootPassword), 'password absent from logs');
+  check('server log confirms provisioning without the secret', bootLog.includes('Founder account provisioned'), 'provisioning logged');
 }
 
 try { bootServer.kill('SIGTERM'); } catch { /* already gone */ }
