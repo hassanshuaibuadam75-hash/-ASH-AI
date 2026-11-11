@@ -298,7 +298,7 @@ const bootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ash-founder-boot-'));
 const bootPort = PORT + 601;
 const bootBase = `http://127.0.0.1:${bootPort}`;
 const bootEmail = 'ceo@ashmesh.test';
-const bootPassword = 'FounderBootstrap123!';
+const bootPassword = 'Founder#1';
 const bootServer = spawn(process.execPath, ['server/index.js'], {
   cwd: ROOT,
   env: {
@@ -323,6 +323,13 @@ if (bootReady) {
   const ceo = new Client('ceo', bootBase);
   const ceoLogin = await ceo.post('/api/auth/login', { email: bootEmail, password: bootPassword });
   check('provisioned founder can sign in', ceoLogin.status === 200, `status ${ceoLogin.status}`);
+  // The configured password is 9 characters: the platform rule accepts it, so provisioning
+  // must not silently skip the account (the previous 10-character floor did exactly that).
+  check(
+    'a 9-character configured password still provisions the founder',
+    !!ceoLogin.data?.user?.isFounder,
+    `isFounder ${ceoLogin.data?.user?.isFounder}`
+  );
 
   const ceoStatus = await ceo.get('/api/founder/editor/status');
   check('provisioned founder reaches the editor with no manual promotion', ceoStatus.status === 200, `status ${ceoStatus.status}`);
