@@ -314,37 +314,33 @@ async function initializePayment({ orderId, email, amountMinor, req }) {
     audit(order.buyer_id, 'order.amount_mismatch_blocked', 'order', orderId, { attempted: amountMinor, actual: order.amount_minor }, '');
     return { status: 'blocked', message: 'Order amount mismatch.' };
   }
-  const secret = process.env.PAYSTACK_SECRET_KEY;
-  if (!secret) {
+  // All provider traffic goes through server/paystack.js so the configured mode, base URL
+  // and live-key guard apply here exactly as they do everywhere else.
+  const provider = paystack.paymentStatus();
+  if (!provider.enabled) {
     return {
-      status: 'not_configured',
-      message: 'Online payment is not configured on this deployment. The order is recorded as pending payment; set PAYSTACK_SECRET_KEY to enable real card/bank payment.',
+      status: provider.reason === 'not_configured' ? 'not_configured' : 'blocked',
+      message: `${provider.message} The order stays pending payment.`,
     };
   }
   const reference = `ash_${orderId}_${crypto.randomBytes(6).toString('hex')}`;
   try {
-    const response = await fetch('https://api.paystack.co/transaction/initialize', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email,
-        amount: amountMinor,
-        currency: 'NGN',
-        reference,
-        callback_url: `${req.protocol}://${req.get('host')}/market?verify=${reference}`,
-        metadata: { orderId, product: '#ash Mesh marketplace' },
-      }),
+    const result = await paystack.initializeTransaction({
+      email,
+      amountMinor,
+      reference,
+      callbackUrl: `${req.protocol}://${req.get('host')}/market?verify=${reference}`,
+      metadata: { orderId, product: '#ash Mesh marketplace' },
     });
-    const data = await response.json();
-    if (!response.ok || !data.status) {
-      return { status: 'failed', message: data.message || 'Payment provider rejected the request.' };
+    if (!result.ok) {
+      return { status: 'failed', message: result.message || 'Payment provider rejected the request.' };
     }
     db.prepare('UPDATE orders SET provider_ref = ?, updated_at = ? WHERE id = ?').run(reference, now(), orderId);
     db.prepare("INSERT INTO transactions (id, order_id, provider, provider_ref, amount_minor, commission_minor, status, raw, created_at) VALUES (?,?,?,?,?,?,?,?,?)")
-      .run(uid('txn_'), orderId, 'paystack', reference, amountMinor, commissionFor(amountMinor).commissionMinor, 'initialized', JSON.stringify(data.data || {}), now());
-    return { status: 'initialized', authorizationUrl: data.data?.authorization_url, reference };
+      .run(uid('txn_'), orderId, 'paystack', reference, amountMinor, commissionFor(amountMinor).commissionMinor, 'initialized', JSON.stringify(result.data || {}), now());
+    return { status: 'initialized', authorizationUrl: result.data?.authorization_url, reference };
   } catch (err) {
-    return { status: 'failed', message: `Payment provider unreachable: ${err.message}` };
+    return { status: 'failed', message: err.message || 'Payment provider could not be reached.' };
   }
 }
 

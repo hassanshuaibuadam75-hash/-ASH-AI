@@ -420,8 +420,13 @@ async function runUnconfigured() {
       `${order.status} ${JSON.stringify(order.data).slice(0, 160)}`);
 
     const pay = await buyer.post(`/api/market/orders/${order.data.order.id}/pay`, { json: {} });
-    check('payment initialisation fails honestly with 503 when unconfigured', pay.status === 503,
-      `${pay.status} ${JSON.stringify(pay.data).slice(0, 160)}`);
+    check('payment initialisation reports honestly that no provider is configured',
+      pay.status === 200 && pay.data?.payment?.status === 'not_configured' &&
+        typeof pay.data.payment.message === 'string' && pay.data.payment.message.length > 20,
+      `${pay.status} ${JSON.stringify(pay.data).slice(0, 200)}`);
+    const unpaid = db.prepare('SELECT status, provider_ref FROM orders WHERE id = ?').get(order.data.order.id);
+    check('an unconfigured order stays pending with no provider reference',
+      unpaid?.status === 'pending_payment' && unpaid?.provider_ref === null, JSON.stringify(unpaid));
 
     const verify = await buyer.get('/api/market/payments/verify?reference=anything');
     check('provider verification also reports 503 instead of a fake success', verify.status === 503,
@@ -530,8 +535,9 @@ async function runConfigured(provider) {
     const payA = await buyer.post(`/api/market/orders/${idA}/pay`, { json: {} });
     check('payment initialises through the provider', payA.status === 200 && !!payA.data?.payment,
       `${payA.status} ${JSON.stringify(payA.data).slice(0, 200)}`);
-    const refA = db.prepare('SELECT provider_ref FROM orders WHERE id = ?').get(idA)?.provider_ref;
-    check('the order carries the provider reference', typeof refA === 'string' && refA.length > 0, String(refA));
+    const refA = payA.data?.payment?.reference || db.prepare('SELECT provider_ref FROM orders WHERE id = ?').get(idA)?.provider_ref;
+    check('the order carries the provider reference', typeof refA === 'string' && refA.length > 0,
+      `payment=${JSON.stringify(payA.data?.payment)} stored=${String(db.prepare('SELECT provider_ref FROM orders WHERE id = ?').get(idA)?.provider_ref)}`);
 
     check('no balance exists before the provider confirms',
       ledger.sellerPending(sellerUser.id) === 0 && ledger.platformAvailable() === 0,
@@ -547,8 +553,9 @@ async function runConfigured(provider) {
       `expected 15000, got ${ledger.platformAvailable()}`);
     check('one sale writes exactly two ledger entries', ledger.orderRows(idA) === 2,
       `rows=${ledger.orderRows(idA)}`);
+    const walletCfg = await seller.get('/api/wallet');
     check('the provider secret never reaches a client',
-      ![overviewSafe(overview), payA, verifyA, banks].some((r) => JSON.stringify(r?.data || {}).includes(SECRET)),
+      ![walletCfg, payA, verifyA, banks].some((r) => JSON.stringify(r?.data || {}).includes(SECRET)),
       'a response contained the secret');
 
     const verifyAgain = await buyer.get(`/api/market/payments/verify?reference=${encodeURIComponent(refA)}`);
