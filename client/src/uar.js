@@ -20,8 +20,14 @@ export const ROUTE_LABEL = {
 };
 
 export function nativeBridge() {
-  const bridge = globalThis.AshMeshNative;
-  return bridge && typeof bridge.getCapabilities === 'function' ? bridge : null;
+  const direct = globalThis.AshMeshNative;
+  if (direct && typeof direct.getCapabilities === 'function') return direct;
+  // On a Capacitor device the plugin is exposed as Capacitor.Plugins.AshMeshNative rather
+  // than a global. Without this check the app reports platform "web" and never routes over
+  // Wi-Fi Aware, Wi-Fi Direct or BLE even though the native shell is present.
+  const cap = globalThis.Capacitor?.Plugins?.AshMeshNative;
+  if (cap && typeof cap.getCapabilities === 'function') return cap;
+  return null;
 }
 
 export async function readCapabilities() {

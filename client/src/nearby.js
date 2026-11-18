@@ -40,10 +40,21 @@ function remember(id) {
 /* -------------------------------- the bridge ------------------------------ */
 
 function rawBridge() {
+  // The Capacitor plugin exposes getCapabilities/startNearby/getPeers/sendNearby, while an
+  // older injected bridge used capabilities/startDiscovery/peers/send. Detection must accept
+  // either surface, otherwise a real device looks like a plain browser and nearby routing is
+  // silently disabled.
+  const usable = (b) =>
+    !!b && [
+      'getCapabilities', 'capabilities',
+      'sendNearby', 'send',
+      'getPeers', 'peers',
+    ].some((name) => typeof b[name] === 'function');
+
   const direct = globalThis.AshMeshNative;
-  if (direct && (typeof direct.send === 'function' || typeof direct.capabilities === 'function')) return direct;
+  if (usable(direct)) return direct;
   const cap = globalThis.Capacitor?.Plugins?.AshMeshNative;
-  if (cap && (typeof cap.send === 'function' || typeof cap.capabilities === 'function')) return cap;
+  if (usable(cap)) return cap;
   return null;
 }
 
