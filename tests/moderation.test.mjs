@@ -96,8 +96,10 @@ const server = spawn(process.execPath, ['server/index.js'], {
     DATA_DIR,
     DB_PATH: path.join(DATA_DIR, 'test.db'),
     FOUNDER_EMAIL,
-    // Keep this instance independent of any ambient FOUNDER_PASSWORD in the environment.
-    FOUNDER_PASSWORD: '',
+    FOUNDER_USERNAME: 'foundermod',
+    // Provision the Founder from this instance's own configuration. Ambient values from the
+    // operator's environment must not leak in, so the value is set explicitly here.
+    FOUNDER_PASSWORD: 'FounderPass123',
   },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
@@ -133,10 +135,12 @@ async function run() {
   if (!(await waitForServer())) throw new Error('server did not start');
 
   /* ------------------------------ accounts ------------------------------- */
-  const fReg = await founder.post('/api/auth/register', {
-    email: FOUNDER_EMAIL, username: 'foundermod', password: 'FounderPass123', fullName: 'Founder Mod',
+  // The Founder is provisioned from server configuration at boot and then signs in:
+  // registration can never mint Founder authority.
+  const fReg = await founder.post('/api/auth/login', {
+    email: FOUNDER_EMAIL, password: 'FounderPass123',
   });
-  check('founder account registers', fReg.status === 201 && fReg.body?.user?.id, `${fReg.status} ${fReg.text.slice(0, 160)}`);
+  check('founder is provisioned from configuration and signs in', fReg.status === 200 && fReg.body?.user?.id, `${fReg.status} ${fReg.text.slice(0, 160)}`);
 
   const aReg = await author.post('/api/auth/register', {
     email: 'author.moderation@ashmesh.test', username: 'authormod', password: 'AuthorPass123', fullName: 'Author Mod',
