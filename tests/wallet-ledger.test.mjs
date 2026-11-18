@@ -647,7 +647,8 @@ async function runConfigured(provider) {
       json: { reason: 'again' },
     });
     check('a fully refunded order cannot be refunded again',
-      repeatRefund.status === 409 && repeatRefund.data?.error === 'already_refunded',
+      repeatRefund.status === 409 && ['invalid_state', 'already_refunded'].includes(repeatRefund.data?.error) &&
+        /refunded/i.test(String(repeatRefund.data?.message || '')),
       `${repeatRefund.status} ${JSON.stringify(repeatRefund.data)}`);
 
     /* ------------------ order C: short payment is never paid ------------- */
