@@ -22,6 +22,11 @@ function anyPermission(...keys) {
   return (req, res, next) => {
     if (!req.user) return res.status(401).json({ error: 'authentication_required', message: 'Sign in to continue.' });
     if (req.user.is_founder === 1) return next();
+    // Grants are only meaningful for an elevated role, so a stale permissions entry left on
+    // a demoted member cannot keep administrative access alive.
+    if (!['admin', 'moderator'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'permission_denied', message: 'You do not have permission for this action.' });
+    }
     const granted = parseJSON(req.user.permissions, []);
     if (granted.includes('*') || keys.some((k) => granted.includes(k))) return next();
     return res.status(403).json({ error: 'permission_denied', message: 'You do not have permission for this action.' });
