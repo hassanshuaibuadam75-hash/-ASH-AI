@@ -303,14 +303,19 @@ function announce(detail) {
   }
 }
 
-// Bind the native shell's inbound channel. The shell dispatches this event; the browser
-// simply ignores it because no bridge is present.
+// Bind the native shell's inbound channel. The native binding must not depend on DOM event
+// support: Capacitor delivers frames through addListener, and an early return on a missing
+// window.addEventListener would leave real devices with no inbound path at all.
 export function listenForPeers() {
-  if (typeof globalThis.addEventListener !== 'function') return () => {};
-  const onFrame = (event) => {
-    handleFrame(event?.detail).catch(() => {});
-  };
-  globalThis.addEventListener('ashmesh:nearby-frame', onFrame);
+  const teardown = [];
+
+  if (typeof globalThis.addEventListener === 'function') {
+    const onFrame = (event) => {
+      handleFrame(event?.detail).catch(() => {});
+    };
+    globalThis.addEventListener('ashmesh:nearby-frame', onFrame);
+    teardown.push(() => globalThis.removeEventListener('ashmesh:nearby-frame', onFrame));
+  }
 
   // Capacitor delivers native events through addListener, not DOM events: the plugin emits
   // "nearbyMessage" for every inbound frame. Without this binding, frames arriving over
@@ -332,12 +337,21 @@ export function listenForPeers() {
     /* no native shell present */
   }
 
-  return () => {
-    globalThis.removeEventListener('ashmesh:nearby-frame', onFrame);
+  teardown.push(() => {
     try {
       nativeHandle?.remove?.();
     } catch {
       /* listener already gone */
+    }
+  });
+
+  return () => {
+    for (const off of teardown) {
+      try {
+        off();
+      } catch {
+        /* already removed */
+      }
     }
   };
 }
