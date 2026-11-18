@@ -3,6 +3,7 @@ package com.ashmesh.app;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGatt;
+import android.bluetooth.BluetoothGattCallback;
 import android.bluetooth.BluetoothGattCharacteristic;
 import android.bluetooth.BluetoothGattServer;
 import android.bluetooth.BluetoothGattServerCallback;
@@ -53,6 +54,8 @@ public class NearbyBle {
     private final PeerSink peerSink;
     private final PayloadSink payloadSink;
     private final Map<String, BluetoothDevice> devices = new ConcurrentHashMap<>();
+    /** Peer id -> outbound GATT client link, used to write frames to that peer. */
+    private final Map<String, BluetoothGatt> clients = new ConcurrentHashMap<>();
 
     private BluetoothLeScanner scanner;
     private BluetoothLeAdvertiser advertiser;
@@ -184,24 +187,66 @@ public class NearbyBle {
 
     // ---------------------------------------------------------------- send
 
-    /** Writes an encrypted frame to a connected peer's RX characteristic. */
+    /**
+     * Writes an encrypted frame to a peer. BLE has no server push: the sender must be a GATT
+     * client that writes to the peer's RX characteristic. Notifying our own write-only RX
+     * characteristic (the previous approach) can never reach another device.
+     */
     public boolean send(String peerId, byte[] payload) {
         if (payload.length > 512) {
-            // Too large for a GATT write: the routing engine should use Wi-Fi Direct instead.
+            // Too large for a GATT write: the routing engine must use Wi-Fi Direct instead.
             return false;
         }
         BluetoothDevice device = devices.get(peerId);
-        if (device == null || gattServer == null) return false;
+        if (device == null) return false;
+
+        BluetoothGatt gatt = clients.get(peerId);
+        if (gatt == null) {
+            // The first send opens the client link. Service discovery completes asynchronously
+            // and the routing engine retries, so the frame stays queued rather than lost.
+            connectClient(device, peerId);
+            return false;
+        }
+
+        BluetoothGattService service = gatt.getService(SERVICE_UUID);
+        if (service == null) return false;
+        BluetoothGattCharacteristic rx = service.getCharacteristic(RX_CHAR_UUID);
+        if (rx == null) return false;
+
         try {
-            BluetoothGattService service = gattServer.getService(SERVICE_UUID);
-            if (service == null) return false;
-            BluetoothGattCharacteristic rx = service.getCharacteristic(RX_CHAR_UUID);
-            if (rx == null) return false;
+            rx.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
             rx.setValue(payload);
-            return gattServer.notifyCharacteristicChanged(device, rx, false);
+            return gatt.writeCharacteristic(rx);
         } catch (SecurityException e) {
             Log.w(TAG, "BLE send permission denied", e);
             return false;
+        }
+    }
+
+    private void connectClient(BluetoothDevice device, String peerId) {
+        try {
+            device.connectGatt(context, false, new BluetoothGattCallback() {
+                @Override
+                public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
+                    if (newState == android.bluetooth.BluetoothProfile.STATE_CONNECTED) {
+                        gatt.discoverServices();
+                    } else if (newState == android.bluetooth.BluetoothProfile.STATE_DISCONNECTED) {
+                        clients.remove(peerId);
+                        gatt.close();
+                    }
+                }
+
+                @Override
+                public void onServicesDiscovered(BluetoothGatt gatt, int status) {
+                    if (status == BluetoothGatt.GATT_SUCCESS) {
+                        clients.put(peerId, gatt);
+                    } else {
+                        gatt.close();
+                    }
+                }
+            });
+        } catch (SecurityException e) {
+            Log.w(TAG, "BLE connect permission denied", e);
         }
     }
 
@@ -211,9 +256,13 @@ public class NearbyBle {
             if (scanner != null) scanner.stopScan(null);
             if (advertiser != null) advertiser.stopAdvertising(null);
             if (gattServer != null) gattServer.close();
+            for (BluetoothGatt client : clients.values()) {
+                try { client.close(); } catch (Exception ignored) { }
+            }
         } catch (Exception e) {
             Log.w(TAG, "error closing BLE transport", e);
         }
+        clients.clear();
         devices.clear();
     }
 }

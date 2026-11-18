@@ -47,6 +47,17 @@ function rawBridge() {
   return null;
 }
 
+// The Capacitor plugin (AshMeshNativePlugin) and the older injected bridge use different
+// method names for the same operation. Try each in order so the client works with either
+// shell instead of silently reporting "no native support" on a real device.
+async function callFirst(methods, args) {
+  for (const method of methods) {
+    const value = await call(method, args);
+    if (value !== null && value !== undefined) return value;
+  }
+  return null;
+}
+
 async function call(method, args) {
   const bridge = rawBridge();
   if (!bridge || typeof bridge[method] !== 'function') return null;
@@ -68,14 +79,16 @@ async function call(method, args) {
 // A radio is only reported as usable when the native shell says so. In a plain browser
 // this is always false and the UI must not imply nearby networking is available.
 export async function capabilities() {
-  const caps = await call('capabilities');
+  const caps = await callFirst(['capabilities', 'getCapabilities']);
   if (!caps || typeof caps !== 'object') {
     return { native: false, aware: false, direct: false, ble: false, lora: false };
   }
   return {
     native: true,
-    aware: !!caps.aware,
-    direct: !!caps.direct,
+    // The Capacitor plugin reports wifiAware/wifiDirect (the real radio probe); the older
+    // injected bridge used aware/direct. Accept either so routing sees the true state.
+    aware: !!(caps.aware ?? caps.wifiAware),
+    direct: !!(caps.direct ?? caps.wifiDirect),
     ble: !!caps.ble,
     lora: !!caps.lora,
   };
@@ -87,16 +100,18 @@ export async function isNearbyAvailable() {
 }
 
 export async function startDiscovery() {
-  return call('startDiscovery');
+  return callFirst(['startDiscovery', 'startNearby']);
 }
 
 export async function stopDiscovery() {
-  return call('stopDiscovery');
+  return callFirst(['stopDiscovery', 'stopNearby']);
 }
 
 export async function peers() {
-  const list = await call('peers');
-  return Array.isArray(list) ? list : [];
+  const list = await callFirst(['peers', 'getPeers']);
+  if (Array.isArray(list)) return list;
+  // The plugin answers { peers: [...] }; an injected bridge answers a bare array.
+  return Array.isArray(list?.peers) ? list.peers : [];
 }
 
 /* ------------------------------ relay consent ----------------------------- */
@@ -163,8 +178,10 @@ async function transmit(frame) {
   let delivered = false;
   for (const peer of known) {
     // eslint-disable-next-line no-await-in-loop
-    const res = await call('send', { peerId: peer.id, payload });
-    if (res !== null && res !== false) delivered = true;
+    const res = await callFirst(['send', 'sendNearby'], { peerId: peer.id, payload });
+    // sendNearby answers { ok, transport, bytes }; an injected bridge answers a boolean.
+    const ok = res === true || (res && typeof res === 'object' && res.ok === true);
+    if (ok) delivered = true;
   }
   return delivered;
 }
@@ -283,7 +300,35 @@ export function listenForPeers() {
     handleFrame(event?.detail).catch(() => {});
   };
   globalThis.addEventListener('ashmesh:nearby-frame', onFrame);
-  return () => globalThis.removeEventListener('ashmesh:nearby-frame', onFrame);
+
+  // Capacitor delivers native events through addListener, not DOM events: the plugin emits
+  // "nearbyMessage" for every inbound frame. Without this binding, frames arriving over
+  // Wi-Fi Aware, Wi-Fi Direct or BLE would never reach handleFrame on a real device.
+  let nativeHandle = null;
+  try {
+    const bridge = rawBridge();
+    if (bridge && typeof bridge.addListener === 'function') {
+      const pending = bridge.addListener('nearbyMessage', (msg) => {
+        handleFrame(msg?.payload ?? msg).catch(() => {});
+      });
+      if (pending && typeof pending.then === 'function') {
+        pending.then((h) => { nativeHandle = h; }).catch(() => {});
+      } else {
+        nativeHandle = pending;
+      }
+    }
+  } catch {
+    /* no native shell present */
+  }
+
+  return () => {
+    globalThis.removeEventListener('ashmesh:nearby-frame', onFrame);
+    try {
+      nativeHandle?.remove?.();
+    } catch {
+      /* listener already gone */
+    }
+  };
 }
 
 export const NEARBY_EVENT = EVENT;

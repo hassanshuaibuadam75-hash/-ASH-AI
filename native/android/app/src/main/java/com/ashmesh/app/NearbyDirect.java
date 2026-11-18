@@ -45,6 +45,8 @@ public class NearbyDirect {
     private ServerSocket server;
     private Thread serverThread;
     private volatile boolean running = false;
+    /** Group owner address reported by WifiP2pManager; never guessed. */
+    private volatile String groupOwnerAddress;
 
     public NearbyDirect(Context context, PeerSink peerSink, PayloadSink payloadSink) {
         this.context = context;
@@ -84,6 +86,17 @@ public class NearbyDirect {
         }
     }
 
+    /**
+     * Fed from the P2P broadcast receiver when connection info arrives. Wi-Fi Direct only
+     * exposes the group owner's address here, so a sender must wait for it instead of
+     * assuming a fixed IP.
+     */
+    public void onConnectionInfo(android.net.wifi.p2p.WifiP2pInfo info) {
+        if (info == null || info.groupOwnerAddress == null) return;
+        groupOwnerAddress = info.groupOwnerAddress.getHostAddress();
+        if (info.isGroupOwner) startServer();
+    }
+
     private void startServer() {
         serverThread = new Thread(() -> {
             try {
@@ -116,35 +129,72 @@ public class NearbyDirect {
         }
     }
 
+    /**
+     * Sends a frame, reconnecting with bounded backoff. The local id is announced once when
+     * the connection opens; writing it before every frame corrupted the stream, because the
+     * reader consumes the id a single time and then expects length-prefixed frames only.
+     */
     public boolean send(String peerId, byte[] payload) {
         if (payload.length > MAX_FRAME) return false;
-        Socket socket = sockets.get(peerId);
-        if (socket == null || socket.isClosed()) {
-            socket = connect(peerId);
-            if (socket == null) return false;
-            sockets.put(peerId, socket);
+        for (int attempt = 0; attempt < 3; attempt++) {
+            Socket socket = sockets.get(peerId);
+            if (socket == null || socket.isClosed()) {
+                socket = connect(peerId);
+                if (socket == null) {
+                    // Group formation may still be in progress; retry shortly.
+                    sleep(400L * (attempt + 1));
+                    continue;
+                }
+                sockets.put(peerId, socket);
+            }
+            try {
+                DataOutputStream out = new DataOutputStream(socket.getOutputStream());
+                out.writeInt(payload.length);
+                out.write(payload);
+                out.flush();
+                return true;
+            } catch (Exception e) {
+                Log.w(TAG, "direct send failed, reconnecting", e);
+                sockets.remove(peerId);
+                closeQuietly(socket);
+                sleep(400L * (attempt + 1));
+            }
         }
+        return false;
+    }
+
+    private void sleep(long millis) {
         try {
-            DataOutputStream out = new DataOutputStream(socket.getOutputStream());
-            out.writeUTF(localId());
-            out.writeInt(payload.length);
-            out.write(payload);
-            out.flush();
-            return true;
-        } catch (Exception e) {
-            Log.w(TAG, "direct send failed", e);
-            sockets.remove(peerId);
-            return false;
+            Thread.sleep(millis);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private void closeQuietly(Socket socket) {
+        try {
+            socket.close();
+        } catch (Exception ignored) {
         }
     }
 
     private Socket connect(String peerId) {
         WifiP2pDevice device = devices.get(peerId);
         if (device == null) return null;
+        String owner = groupOwnerAddress;
+        if (owner == null || owner.isEmpty()) {
+            // No group owner address yet: nudge discovery and let the caller retry. Guessing
+            // an address would send frames to the wrong device, so refuse instead.
+            discover();
+            return null;
+        }
         try {
-            // The group owner listens; a connected client dials the group owner's address.
             Socket socket = new Socket();
-            socket.connect(new java.net.InetSocketAddress(java.net.InetAddress.getByName("192.168.49.1"), PORT), 5000);
+            socket.connect(new java.net.InetSocketAddress(java.net.InetAddress.getByName(owner), PORT), 5000);
+            // Announce our identity exactly once per connection.
+            DataOutputStream out = new DataOutputStream(socket.getOutputStream());
+            out.writeUTF(localId());
+            out.flush();
             return socket;
         } catch (Exception e) {
             Log.w(TAG, "could not open direct socket to " + peerId, e);
