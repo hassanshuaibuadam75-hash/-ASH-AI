@@ -5,6 +5,7 @@
 // money moves, and a provider confirmation is required before anything is settled.
 import express from 'express';
 import { requireAuth, requireFounder, rateLimit, clean, clientIp } from './lib.js';
+import { db, parseJSON } from './db.js';
 import * as paystack from './paystack.js';
 import {
   walletSummary,
@@ -158,6 +159,15 @@ router.post(
   requireAuth,
   rateLimit({ name: 'refund', limit: 20, windowMs: 60 * 60 * 1000 }),
   wrap(async (req, res) => {
+    // Only the parties to the order, or an authorised marketplace manager, may ask for a
+    // refund. The provider still has to confirm it before any balance changes.
+    const order = db.prepare('SELECT id, buyer_id, seller_id FROM orders WHERE id = ?').get(req.params.id);
+    if (!order) return res.status(404).json({ error: 'not_found', message: 'Order not found.' });
+    const canManage =
+      req.user.is_founder === 1 || parseJSON(req.user.permissions, []).includes('marketplace.manage');
+    if (!canManage && order.buyer_id !== req.user.id && order.seller_id !== req.user.id) {
+      return res.status(403).json({ error: 'forbidden', message: 'This order is not yours.' });
+    }
     const result = await refundOrder({
       orderId: req.params.id,
       actorId: req.user.id,
