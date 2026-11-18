@@ -4,6 +4,8 @@ import express from 'express';
 import { db, uid, now, parseJSON, toPublicUser, notify, audit, areFriends, isBlocked } from './db.js';
 import { requireAuth, upload, saveMedia, rateLimit, clean, clampInt, badRequest, clientIp } from './lib.js';
 import { screenContent } from './moderation.js';
+import * as paystack from './paystack.js';
+import { recordOrderPaid, releaseOrderFunds, completeRefund, settlePayout } from './wallet.js';
 
 const router = express.Router();
 
@@ -371,18 +373,17 @@ router.post('/market/orders/:id/pay', requireAuth, async (req, res) => {
 // Provider verification. Payment is only ever marked paid after the provider confirms it.
 router.get('/market/payments/verify', requireAuth, async (req, res) => {
   const reference = clean(req.query.reference, 120);
-  const secret = process.env.PAYSTACK_SECRET_KEY;
-  if (!secret) return res.status(503).json({ error: 'payment_not_configured', message: 'Payment provider is not configured on this deployment.' });
+  const config = paystack.paymentStatus();
+  if (!config.enabled) return res.status(503).json({ error: config.reason, message: config.message });
   if (!reference) return badRequest(res, 'A payment reference is required.');
   const tx = db.prepare('SELECT * FROM transactions WHERE provider_ref = ?').get(reference);
   if (!tx) return res.status(404).json({ error: 'not_found', message: 'Unknown payment reference.' });
   const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(tx.order_id);
   if (!order || order.buyer_id !== req.user.id) return res.status(403).json({ error: 'forbidden', message: 'This payment is not yours.' });
 
-  const response = await fetch(`https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`, {
-    headers: { Authorization: `Bearer ${secret}` },
-  });
-  const data = await response.json();
+  // The provider is the only source of truth for a payment; the client never is.
+  const response = await paystack.verifyTransaction(reference);
+  const data = { status: response.ok, data: response.data, message: response.message };
   // The provider must confirm the exact order amount; a short or mismatched payment is not accepted.
   const providerAmount = Number(data.data?.amount);
   const exactAmount = providerAmount === order.amount_minor;
@@ -436,37 +437,92 @@ function completeOrder(orderId, reference, raw) {
   audit(order.buyer_id, 'order.paid', 'order', orderId, {
     reference, amountMinor: order.amount_minor, commissionMinor, commissionRate: rate, payoutMinor: order.amount_minor - commissionMinor,
   }, '');
-  return db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
+  const settled = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
+  // Money becomes real only here: the seller share goes to the pending bucket and the
+  // commission to the platform account. Both entries are idempotent per order.
+  recordOrderPaid(settled);
+  return settled;
 }
 
-// Paystack webhook — signature verified with the secret key before any state change.
+// Paystack webhook — the signature is verified over the raw body before any state change,
+// and each accepted event is recorded once so a replayed delivery cannot act twice.
 router.post('/market/payments/webhook', express.json({ type: '*/*' }), (req, res) => {
-  const secret = process.env.PAYSTACK_SECRET_KEY;
-  if (!secret) return res.status(503).json({ error: 'payment_not_configured' });
-  const signature = req.get('x-paystack-signature') || '';
-  const raw = req.rawBody || JSON.stringify(req.body);
-  const expected = crypto.createHmac('sha512', secret).update(raw).digest('hex');
-  if (signature.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
-    return res.status(401).json({ error: 'invalid_signature' });
+  const raw = req.rawBody || Buffer.from(JSON.stringify(req.body || {}), 'utf8');
+  const check = paystack.verifyWebhookSignature(raw, req.get('x-paystack-signature'));
+  if (!check.ok) {
+    return res.status(check.reason === 'not_configured' ? 503 : 401).json({ error: check.reason });
   }
-  const event = req.body;
-  if (event?.event === 'charge.success') {
-    const reference = event.data?.reference;
+  const event = req.body || {};
+  const eventType = clean(event.event, 60) || 'unknown';
+  const payloadHash = crypto.createHash('sha256').update(raw).digest('hex');
+  const eventKey = String(event.id || event.data?.id || payloadHash).slice(0, 120);
+  const claim = db
+    .prepare(
+      'INSERT OR IGNORE INTO payment_events (id, provider, event_key, event_type, reference, payload_hash, received_at) VALUES (?,?,?,?,?,?,?)'
+    )
+    .run(uid('evt_'), 'paystack', eventKey, eventType, String(event.data?.reference || '').slice(0, 120), payloadHash, now());
+  if (claim.changes === 0) return res.json({ ok: true, duplicate: true });
+
+  let outcome = 'ignored';
+  if (eventType === 'charge.success') {
+    const reference = String(event.data?.reference || '');
     const order = db.prepare('SELECT * FROM orders WHERE provider_ref = ?').get(reference);
-    if (order && Number(event.data.amount) >= order.amount_minor) completeOrder(order.id, reference, event.data);
+    if (order && Number(event.data?.amount) >= order.amount_minor) {
+      outcome = completeOrder(order.id, reference, event.data) ? 'order_paid' : 'order_not_completed';
+    } else if (order) {
+      audit(order.buyer_id, 'order.webhook_amount_mismatch', 'order', order.id, {
+        providerAmount: Number(event.data?.amount), orderAmount: order.amount_minor,
+      }, '');
+      outcome = 'amount_mismatch';
+    } else {
+      outcome = 'unknown_reference';
+    }
+  } else if (eventType === 'refund.processed') {
+    const txRef = String(event.data?.transaction_reference || event.data?.transaction?.reference || '');
+    const refundRef = String(event.data?.reference || event.data?.id || '');
+    const refundRow =
+      (txRef &&
+        db
+          .prepare("SELECT r.* FROM refunds r JOIN orders o ON o.id = r.order_id WHERE o.provider_ref = ? AND r.status = 'processing' ORDER BY r.created_at DESC LIMIT 1")
+          .get(txRef)) ||
+      (refundRef && db.prepare("SELECT * FROM refunds WHERE provider_ref = ? AND status = 'processing' LIMIT 1").get(refundRef)) ||
+      null;
+    outcome = refundRow && completeRefund({ refundId: refundRow.id, providerData: event.data }) ? 'refund_completed' : 'refund_not_matched';
+  } else if (eventType.startsWith('transfer.')) {
+    const reference = String(event.data?.reference || '');
+    const payout = db.prepare('SELECT * FROM payout_requests WHERE provider_ref = ?').get(reference);
+    if (!payout) {
+      outcome = 'payout_not_matched';
+    } else {
+      const settled = settlePayout({
+        payoutId: payout.id,
+        outcome: eventType === 'transfer.success' ? 'paid' : 'failed',
+        providerData: event.data,
+        reason: String(event.data?.reason || eventType),
+      });
+      outcome = settled ? `payout_${settled.status}` : 'payout_not_processing';
+    }
   }
-  res.json({ ok: true });
+  db.prepare('UPDATE payment_events SET outcome = ? WHERE event_key = ?').run(outcome, eventKey);
+  res.json({ ok: true, outcome });
 });
 
 router.post('/market/orders/:id/status', requireAuth, (req, res) => {
   const row = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ error: 'not_found', message: 'Order not found.' });
   const status = clean(req.body.status, 20);
+  // A refund is never a bare status flip: the provider must confirm it, so refunds go
+  // through POST /api/wallet/orders/:id/refund which reverses the ledger on confirmation.
+  if (status === 'refunded') {
+    return res.status(409).json({
+      error: 'use_refund_endpoint',
+      message: 'Refunds must go through the refund endpoint so the payment provider confirms the reversal before any balance changes.',
+    });
+  }
   const transitions = {
     shipped: { from: ['paid'], role: 'seller' },
     completed: { from: ['shipped', 'paid'], role: 'buyer' },
     cancelled: { from: ['pending_payment'], role: 'buyer' },
-    refunded: { from: ['paid', 'shipped', 'completed'], role: 'founder_or_admin' },
   };
   const rule = transitions[status];
   if (!rule) return badRequest(res, 'Unknown order status.');
@@ -477,10 +533,8 @@ router.post('/market/orders/:id/status', requireAuth, (req, res) => {
   const allowed = (rule.role === 'buyer' && isBuyer) || (rule.role === 'seller' && isSeller) || (rule.role === 'founder_or_admin' && isAdmin);
   if (!allowed) return res.status(403).json({ error: 'forbidden', message: 'You cannot perform this action on the order.' });
   db.prepare('UPDATE orders SET status = ?, updated_at = ? WHERE id = ?').run(status, now(), row.id);
-  if (status === 'refunded') {
-    db.prepare("INSERT INTO transactions (id, order_id, provider, provider_ref, amount_minor, commission_minor, status, created_at) VALUES (?,?,?,?,?,?, 'refunded', ?)")
-      .run(uid('txn_'), row.id, row.provider, row.provider_ref || '', row.amount_minor, row.commission_minor, now());
-  }
+  // Buyer confirmation moves the seller's pending share into the withdrawable balance.
+  if (status === 'completed') releaseOrderFunds(db.prepare('SELECT * FROM orders WHERE id = ?').get(row.id));
   notify(isBuyer ? row.seller_id : row.buyer_id, { type: `order_${status}`, actorId: req.user.id, entityType: 'order', entityId: row.id });
   audit(req.user.id, `order.${status}`, 'order', row.id, {}, clientIp(req));
   res.json({ order: serializeOrder(db.prepare('SELECT * FROM orders WHERE id = ?').get(row.id), req.user.id) });
