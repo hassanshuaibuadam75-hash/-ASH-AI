@@ -302,20 +302,26 @@ async function main() {
 
   /* ------------------- 11. no promotion without the operator credential ---- */
 
-  await stopServer(server.child);
-
-  // The victim registered as an ordinary member. Restart with FOUNDER_EMAIL pointed at
-  // that address and NO configured password: the account must not be promoted.
-  server = bootServer({ dataDir, env: { FOUNDER_EMAIL: victim.email, FOUNDER_PASSWORD: '' } });
-  await waitReady();
-
+  // A victim account created as an ordinary member while the operator's FOUNDER_EMAIL still
+  // points somewhere else.
   const victimClient = makeClient();
   const victimReg = await register(victimClient, victim);
   check('the victim account registers as an ordinary member', victimReg.status === 201, `status ${victimReg.status}`);
 
-  const victimMe = await victimClient.get('/api/auth/me');
-  check('an account using the Founder email is not promoted', victimMe.data?.user?.isFounder === false, JSON.stringify(victimMe.data?.user?.isFounder));
-  const victimDash = await victimClient.get('/api/founder/dashboard');
+  await stopServer(server.child);
+
+  // Restart with FOUNDER_EMAIL pointed at that existing address and NO configured password:
+  // an ordinary account must never inherit Founder authority on boot.
+  server = bootServer({ dataDir, env: { FOUNDER_EMAIL: victim.email, FOUNDER_PASSWORD: '' } });
+  await waitReady();
+
+  const victimAfter = makeClient();
+  const victimLogin = await victimAfter.post('/api/auth/login', { json: { identifier: victim.email, password: victim.password } });
+  check('the existing account still signs in after FOUNDER_EMAIL points at it', victimLogin.status === 200, `status ${victimLogin.status}`);
+
+  const victimMe = await victimAfter.get('/api/auth/me');
+  check('an existing account using the Founder email is not promoted on boot', victimMe.data?.user?.isFounder === false, JSON.stringify(victimMe.data?.user?.isFounder));
+  const victimDash = await victimAfter.get('/api/founder/dashboard');
   check('the unpromoted account cannot reach the Founder dashboard', victimDash.status === 403, `status ${victimDash.status}`);
 
   await stopServer(server.child);
