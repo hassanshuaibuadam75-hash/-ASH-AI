@@ -825,8 +825,14 @@ async function runConfigured(provider) {
     const finalSeller = ledger.sellerAvailable(sellerUser.id) + ledger.sellerPending(sellerUser.id);
     check('the seller balance equals the one unreversed sale', finalSeller === 485000,
       `total=${finalSeller}`);
-    check('the platform kept only the commission of the completed sale', ledger.platformAvailable() === 15000,
-      `platform=${ledger.platformAvailable()}`);
+    // Order A was refunded (commission reversed), orders B and D were both paid and never
+    // refunded, so the platform must hold exactly their two 3% commissions of N5,000.
+    const retainedCommission = db
+      .prepare("SELECT COALESCE(SUM(comission_minor), 0) AS total FROM orders WHERE status NOT IN ('refunded','cancelled','held','pending_payment')")
+      .get().total;
+    check('the platform kept only the commission of the unrefunded sales',
+      retainedCommission === 30000 && ledger.platformAvailable() === retainedCommission,
+      `platform=${ledger.platformAvailable()} retained=${retainedCommission}`);
     check('the buyer was never credited', ledger.sellerAvailable(buyerUser.id) === 0,
       `buyer available=${ledger.sellerAvailable(buyerUser.id)}`);
   } finally {
