@@ -828,7 +828,7 @@ async function runConfigured(provider) {
     // Order A was refunded (commission reversed), orders B and D were both paid and never
     // refunded, so the platform must hold exactly their two 3% commissions of N5,000.
     const retainedCommission = db
-      .prepare("SELECT COALESCE(SUM(comission_minor), 0) AS total FROM orders WHERE status NOT IN ('refunded','cancelled','held','pending_payment')")
+      .prepare("SELECT COALESCE(SUM(commission_minor), 0) AS total FROM orders WHERE status NOT IN ('refunded','cancelled','held','pending_payment')")
       .get().total;
     check('the platform kept only the commission of the unrefunded sales',
       retainedCommission === 30000 && ledger.platformAvailable() === retainedCommission,
