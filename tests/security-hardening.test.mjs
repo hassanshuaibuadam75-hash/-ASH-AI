@@ -80,6 +80,7 @@ function makeClient() {
     get: (p, o) => request('GET', p, o),
     post: (p, o) => request('POST', p, o),
     raw: request,
+    cookies,
   };
 }
 
