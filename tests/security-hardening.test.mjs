@@ -314,7 +314,7 @@ async function main() {
   check('the victim account registers as an ordinary member', victimReg.status === 201, `status ${victimReg.status}`);
 
   const victimMe = await victimClient.get('/api/auth/me');
-  check('an ordinary account using the Founder email is not promoted on boot', victimMe.data?.user?.isFounder === false, JSON.stringify(victimMe.data?.user?.isFounder));
+  check('an account using the Founder email is not promoted', victimMe.data?.user?.isFounder === false, JSON.stringify(victimMe.data?.user?.isFounder));
   const victimDash = await victimClient.get('/api/founder/dashboard');
   check('the unpromoted account cannot reach the Founder dashboard', victimDash.status === 403, `status ${victimDash.status}`);
 

@@ -21,6 +21,11 @@ const BASE = `http://127.0.0.1:${PORT}`;
 const DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'ash-mesh-test-'));
 
 const FOUNDER_EMAIL = 'founder@ashmesh.test';
+// The Founder is provisioned from server configuration at boot (ensureFounderAccount) and
+// then signs in. Registration can never mint Founder authority, so the suite must not try to
+// create the Founder that way.
+const FOUNDER_PASS = 'FounderPass123';
+const FOUNDER_USERNAME = 'founder';
 const results = [];
 let failures = 0;
 
@@ -95,10 +100,10 @@ const server = spawn(process.execPath, ['server/index.js'], {
     DB_PATH: path.join(DATA_DIR, 'test.db'),
     FORCE_INSECURE_COOKIES: '1',
     FOUNDER_EMAIL,
-    // Ambient Founder credentials from the operator's environment must not leak into this
-    // isolated test instance: without this, boot provisioning creates the Founder before the
-    // suite registers it, and every later step fails on a duplicate email.
-    FOUNDER_PASSWORD: '',
+    FOUNDER_USERNAME,
+    // Provision the Founder from this instance's own configuration. Ambient credentials from
+    // the operator's environment must not leak in, so the value is set explicitly here.
+    FOUNDER_PASSWORD: FOUNDER_PASS,
     GROQ_API_KEY: '',
     PAYSTACK_SECRET_KEY: '',
     RESEND_API_KEY: '',
@@ -146,17 +151,15 @@ async function run() {
   check('health endpoint reports ok', health.status === 200 && health.body?.status === 'ok', `status=${health.status}`);
 
   /* ---- registration ---- */
-  const reg = await founder.post('/api/auth/register', {
+  const founderLogin = await founder.post('/api/auth/login', {
     email: FOUNDER_EMAIL,
-    username: 'founder',
-    password: 'FounderPass123',
-    fullName: 'Hassan Shuaibu Adam',
+    password: FOUNDER_PASS,
   });
-  check('founder registers', reg.status === 201 && reg.body?.user?.id, `status=${reg.status} ${reg.text.slice(0, 200)}`);
-  check('founder account carries founder authority', reg.body?.user?.isFounder === true, JSON.stringify(reg.body?.user?.isFounder));
-  check('registration issues a CSRF token', !!founder.csrf, 'no ash_csrf cookie');
+  check('founder is provisioned from configuration and signs in', founderLogin.status === 200 && founderLogin.body?.user?.id, `status=${founderLogin.status} ${founderLogin.text.slice(0, 200)}`);
+  check('founder account carries founder authority', founderLogin.body?.user?.isFounder === true, JSON.stringify(founderLogin.body?.user?.isFounder));
+  check('sign-in issues a CSRF token', !!founder.csrf, 'no ash_csrf cookie');
 
-  const founderId = reg.body?.user?.id;
+  const founderId = founderLogin.body?.user?.id;
 
   const reg2 = await member.post('/api/auth/register', {
     email: 'member@ashmesh.test',
