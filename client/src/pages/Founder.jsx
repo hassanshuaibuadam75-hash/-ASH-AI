@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { api, formatTime, naira } from '../api.js';
 import { Badge, Empty, Field, Spinner, useToast } from '../ui.jsx';
 import DataBackupsPanel from '../components/DataBackupsPanel.jsx';
+import FounderWalletPanel from '../components/FounderWalletPanel.jsx';
 
 function Stat({ label, value, hint }) {
   return (
@@ -177,6 +178,8 @@ export default function Founder() {
       </div>
 
       <DataBackupsPanel />
+
+      <FounderWalletPanel />
 
       <div className="card">
         <h3 style={{ marginTop: 0 }}>Recent administrative activity</h3>

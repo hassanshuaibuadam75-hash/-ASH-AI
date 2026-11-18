@@ -4,6 +4,7 @@ import { api, formatTime, naira } from '../api.js';
 import { pct } from '../format.js';
 import { useAuth } from '../App.jsx';
 import { Avatar, Badge, ConfirmDialog, Empty, Field, Modal, Spinner, useToast } from '../ui.jsx';
+import WalletPanel from '../components/WalletPanel.jsx';
 
 const CATEGORIES = ['general', 'electronics', 'phones', 'fashion', 'home', 'vehicles', 'services', 'education', 'agriculture', '3d-assets'];
 
@@ -265,7 +266,7 @@ export default function Market() {
           <button className="btn primary" onClick={() => setCreating(true)}>Sell something</button>
         </div>
         <div className="tabs" style={{ marginTop: 12 }}>
-          {[['browse', 'Browse'], ['orders', `Orders (${orders.length})`], ['sell', `My listings (${mine.length})`], ['verify', 'Seller verification']].map(([key, label]) => (
+          {[['browse', 'Browse'], ['orders', `Orders (${orders.length})`], ['sell', `My listings (${mine.length})`], ['wallet', 'Wallet'], ['verify', 'Seller verification']].map(([key, label]) => (
             <button key={key} className={`tab ${tab === key ? 'active' : ''}`} onClick={() => setTab(key)}>{label}</button>
           ))}
         </div>
@@ -372,6 +373,8 @@ export default function Market() {
           ))}
         </div>
       ) : null}
+
+      {tab === 'wallet' ? <WalletPanel /> : null}
 
       {tab === 'verify' ? (
         <div className="card">
