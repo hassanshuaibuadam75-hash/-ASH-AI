@@ -51,14 +51,21 @@ export function ensureFounderAccount() {
     .get(email);
 
   if (existing) {
+    const configured = String(process.env.FOUNDER_PASSWORD || '');
     if (existing.is_founder !== 1 || existing.role !== 'founder') {
+      // Promotion to Founder requires the operator's configured credential. A row that
+      // merely used the Founder email must never inherit Founder authority on boot: with
+      // no configured password there is nothing proving the operator owns that account.
+      if (!configured) {
+        console.log('[#ash Mesh] Founder email belongs to a non-Founder account; set FOUNDER_PASSWORD to claim it. Not promoting.');
+        return null;
+      }
       db.prepare("UPDATE users SET role = 'founder', is_founder = 1 WHERE id = ?").run(existing.id);
       console.log(`[#ash Mesh] Founder authority bound to account ${existing.id}`);
     }
     // The operator's configured credential stays authoritative: if FOUNDER_PASSWORD is
     // rotated, the next boot applies it. Without this the account silently kept an old
     // password and a rotated secret appeared to be ignored.
-    const configured = String(process.env.FOUNDER_PASSWORD || '');
     if (configured && !verifyPassword(configured, existing.password_hash)) {
       db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hashPassword(configured), existing.id);
       console.log('[#ash Mesh] Founder password updated from server configuration.');
@@ -189,9 +196,15 @@ export function requirePermission(permission) {
   return (req, res, next) => {
     if (!req.user) return res.status(401).json({ error: 'authentication_required', message: 'Sign in to continue.' });
     if (req.user.is_founder === 1) return next();
+    // Permission grants only mean something for an elevated role. A leftover permissions
+    // entry on an ordinary member (for example after a role was reduced) must not keep
+    // working, otherwise demoting an administrator silently leaves their access in place.
+    const elevated = req.user.role === 'admin' || req.user.role === 'moderator';
+    if (!elevated) {
+      return res.status(403).json({ error: 'permission_denied', message: 'You do not have permission for this action.' });
+    }
     const granted = parseJSON(req.user.permissions, []);
-    if (req.user.role === 'admin' && (granted.includes('*') || granted.includes(permission))) return next();
-    if (granted.includes(permission)) return next();
+    if (granted.includes('*') || granted.includes(permission)) return next();
     return res.status(403).json({ error: 'permission_denied', message: 'You do not have permission for this action.' });
   };
 }

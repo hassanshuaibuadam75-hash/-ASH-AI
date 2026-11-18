@@ -33,13 +33,26 @@ router.post('/auth/register', rateLimit({ name: 'register', limit: 10, windowMs:
     return res.status(409).json({ error: 'username_taken', errors: { username: 'That username is taken.' }, message: 'Username already taken.' });
   }
 
-  const id = uid('usr_');
+  // Founder authority is NEVER minted by registration. The Founder account is provisioned
+  // only from server-side configuration at boot (ensureFounderAccount). Before this check,
+  // whoever submitted FOUNDER_EMAIL first was inserted with role 'founder' and
+  // is_founder = 1 and a password of their choosing — a full account takeover of the
+  // highest-privilege role. The address is reserved instead, and answered exactly like any
+  // other already-registered address so the reservation itself is not disclosed.
   const founderEmail = (process.env.FOUNDER_EMAIL || '').trim().toLowerCase();
-  const isFounder = !!founderEmail && founderEmail === email;
+  if (founderEmail && founderEmail === email) {
+    return res.status(409).json({
+      error: 'email_taken',
+      errors: { email: 'An account with this email already exists.' },
+      message: 'Email already registered.',
+    });
+  }
+
+  const id = uid('usr_');
   db.prepare(
     `INSERT INTO users (id, email, username, password_hash, full_name, privacy, role, is_founder, created_at, last_seen_at)
      VALUES (?,?,?,?,?,?,?,?,?,?)`
-  ).run(id, email, username, hashPassword(password), fullName, JSON.stringify(DEFAULT_PRIVACY), isFounder ? 'founder' : 'member', isFounder ? 1 : 0, now(), now());
+  ).run(id, email, username, hashPassword(password), fullName, JSON.stringify(DEFAULT_PRIVACY), 'member', 0, now(), now());
 
   createSession(id, req, res);
   audit(id, 'account.register', 'user', id, {}, clientIp(req));
@@ -145,6 +158,10 @@ router.post('/auth/password/change', requireAuth, (req, res) => {
   if (!verifyPassword(current, user.password_hash)) return res.status(401).json({ error: 'invalid_credentials', message: 'Current password is incorrect.' });
   if (next.length < 8 || !/[A-Za-z]/.test(next) || !/[0-9]/.test(next)) return badRequest(res, 'New password must be at least 8 characters with letters and numbers.');
   db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hashPassword(next), user.id);
+  // A changed password signs every other device out. The session that performed the change
+  // stays usable, so the user is not bounced out of the page they are on. Without this a
+  // stolen session survived a password change, which defeats the point of changing it.
+  db.prepare('DELETE FROM sessions WHERE user_id = ? AND id != ?').run(user.id, req.session.id);
   audit(user.id, 'auth.password_changed', 'user', user.id, {}, clientIp(req));
   res.json({ ok: true });
 });
