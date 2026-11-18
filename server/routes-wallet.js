@@ -158,8 +158,6 @@ router.post(
   requireAuth,
   rateLimit({ name: 'refund', limit: 20, windowMs: 60 * 60 * 1000 }),
   wrap(async (req, res) => {
-    const order = req.app.locals.dbOrder ? req.app.locals.dbOrder(req.params.id) : null;
-    void order;
     const result = await refundOrder({
       orderId: req.params.id,
       actorId: req.user.id,
