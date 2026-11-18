@@ -377,3 +377,94 @@ CREATE TABLE IF NOT EXISTS heritage_reactions (
   created_at TEXT NOT NULL,
   PRIMARY KEY (entry_id, user_id, kind)
 );
+
+/* ---------------------- Stage D: wallet, payouts, refunds ------------------
+   The wallet is an immutable double-entry style ledger: rows are never updated or
+   deleted, and every row carries a unique idempotency key so a retried provider
+   webhook or a double-tapped request cannot credit or debit twice. Balances are
+   always derived from the ledger, never stored as an editable number.
+-------------------------------------------------------------------------- */
+CREATE TABLE IF NOT EXISTS wallet_ledger (
+  id              TEXT PRIMARY KEY,
+  user_id         TEXT REFERENCES users(id) ON DELETE CASCADE, -- NULL for the platform account
+  account         TEXT NOT NULL DEFAULT 'user',                -- user | platform
+  bucket          TEXT NOT NULL,                               -- available | pending
+  direction       TEXT NOT NULL,                               -- credit | debit
+  amount_minor    INTEGER NOT NULL,
+  currency        TEXT NOT NULL DEFAULT 'NGN',
+  reason          TEXT NOT NULL,
+  ref_type        TEXT NOT NULL DEFAULT '',
+  ref_id          TEXT NOT NULL DEFAULT '',
+  idempotency_key TEXT NOT NULL UNIQUE,
+  meta            TEXT NOT NULL DEFAULT '{}',
+  created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ledger_user ON wallet_ledger(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ledger_ref ON wallet_ledger(ref_type, ref_id);
+
+CREATE TABLE IF NOT EXISTS seller_bank_accounts (
+  id                   TEXT PRIMARY KEY,
+  user_id              TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  bank_code            TEXT NOT NULL,
+  bank_name            TEXT NOT NULL,
+  account_number_enc   TEXT NOT NULL,   -- AES-256-GCM ciphertext, never the raw number
+  account_last4        TEXT NOT NULL,
+  account_name         TEXT NOT NULL DEFAULT '',
+  resolved_account_name TEXT NOT NULL DEFAULT '',
+  status               TEXT NOT NULL DEFAULT 'unverified', -- unverified | verified | name_mismatch | rejected
+  verification_note    TEXT NOT NULL DEFAULT '',
+  recipient_code       TEXT,
+  created_at           TEXT NOT NULL,
+  updated_at           TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_bank_user ON seller_bank_accounts(user_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS payout_requests (
+  id              TEXT PRIMARY KEY,
+  seller_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  amount_minor    INTEGER NOT NULL,
+  currency        TEXT NOT NULL DEFAULT 'NGN',
+  status          TEXT NOT NULL DEFAULT 'pending', -- pending|under_review|approved|processing|paid|failed|cancelled
+  bank_account_id TEXT REFERENCES seller_bank_accounts(id) ON DELETE SET NULL,
+  provider        TEXT NOT NULL DEFAULT 'paystack',
+  provider_ref    TEXT,
+  transfer_code   TEXT,
+  failure_reason  TEXT NOT NULL DEFAULT '',
+  note            TEXT NOT NULL DEFAULT '',
+  requested_at    TEXT NOT NULL,
+  reviewed_by     TEXT REFERENCES users(id) ON DELETE SET NULL,
+  reviewed_at     TEXT,
+  processed_at    TEXT,
+  updated_at      TEXT NOT NULL,
+  idempotency_key TEXT,
+  UNIQUE (seller_id, idempotency_key)
+);
+CREATE INDEX IF NOT EXISTS idx_payout_seller ON payout_requests(seller_id, requested_at DESC);
+CREATE INDEX IF NOT EXISTS idx_payout_status ON payout_requests(status, requested_at DESC);
+
+CREATE TABLE IF NOT EXISTS refunds (
+  id              TEXT PRIMARY KEY,
+  order_id        TEXT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  amount_minor    INTEGER NOT NULL,
+  currency        TEXT NOT NULL DEFAULT 'NGN',
+  reason          TEXT NOT NULL DEFAULT '',
+  status          TEXT NOT NULL DEFAULT 'pending', -- pending|processing|completed|failed
+  provider_ref    TEXT,
+  requested_by    TEXT REFERENCES users(id) ON DELETE SET NULL,
+  failure_reason  TEXT NOT NULL DEFAULT '',
+  idempotency_key TEXT UNIQUE,
+  created_at      TEXT NOT NULL,
+  completed_at    TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_refund_order ON refunds(order_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS payment_events (
+  id           TEXT PRIMARY KEY,
+  provider     TEXT NOT NULL DEFAULT 'paystack',
+  event_key    TEXT NOT NULL UNIQUE,   -- provider event id or payload hash: replay protection
+  event_type   TEXT NOT NULL,
+  reference    TEXT NOT NULL DEFAULT '',
+  payload_hash TEXT NOT NULL,
+  outcome      TEXT NOT NULL DEFAULT '',
+  received_at  TEXT NOT NULL
+);
