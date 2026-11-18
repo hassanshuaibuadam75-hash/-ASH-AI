@@ -120,7 +120,8 @@ const server = spawn(process.execPath, ['server/index.js'], {
     PORT: String(PORT),
     DATA_DIR,
     FOUNDER_EMAIL,
-    FOUNDER_PASSWORD: '',
+    FOUNDER_USERNAME: 'thefounder',
+    FOUNDER_PASSWORD: PASSWORD,
     GROQ_API_KEY: '',
     BACKUP_SCHEDULER: 'off',
   },
@@ -150,10 +151,12 @@ async function main() {
   const spoof = new Client('spoof');
 
   /* ---------- accounts ---------- */
-  const founderReg = await founder.post('/api/auth/register', {
-    email: FOUNDER_EMAIL, username: 'thefounder', password: PASSWORD, fullName: 'Hassan Shuaibu Adam',
+  // The Founder is provisioned from server configuration at boot, then signs in:
+  // registration can never mint Founder authority.
+  const founderReg = await founder.post('/api/auth/login', {
+    email: FOUNDER_EMAIL, password: PASSWORD,
   });
-  check('Founder account registers', founderReg.status === 201 || founderReg.status === 200, `status ${founderReg.status}`);
+  check('Founder signs in with the provisioned account', founderReg.status === 200, `status ${founderReg.status}`);
 
   const memberReg = await member.post('/api/auth/register', {
     email: 'member@ashmesh.test', username: 'member1', password: PASSWORD, fullName: 'Ordinary Member',
@@ -172,7 +175,6 @@ async function main() {
 
   // Founder authority comes from the role record only, never from a typed name.
   const raw = new Database(path.join(DATA_DIR, 'ash-mesh.db'));
-  raw.prepare("UPDATE users SET role='founder', is_founder=1 WHERE lower(email)=lower(?)").run(FOUNDER_EMAIL);
   raw.prepare("UPDATE users SET role='admin', is_founder=0 WHERE lower(email)='admin@ashmesh.test'").run();
   raw.prepare("UPDATE users SET role='user', is_founder=0 WHERE lower(email)='spoof@ashmesh.test'").run();
   const founderId = raw.prepare('SELECT id FROM users WHERE lower(email)=lower(?)').get(FOUNDER_EMAIL).id;

@@ -101,7 +101,7 @@ async function waitReady(base = BASE, deadlineMs = 30000) {
 
 const server = spawn(process.execPath, ['server/index.js'], {
   cwd: ROOT,
-  env: { ...process.env, PORT: String(PORT), DATA_DIR, FOUNDER_EMAIL, FOUNDER_PASSWORD: '', GROQ_API_KEY: '' },
+  env: { ...process.env, PORT: String(PORT), DATA_DIR, FOUNDER_EMAIL, FOUNDER_USERNAME: 'thefounder', FOUNDER_PASSWORD: PASSWORD, GROQ_API_KEY: '' },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 let serverLog = '';
@@ -124,19 +124,24 @@ console.log('\n#ash Mesh — Founder AI App Editor\n');
 
 // ---------------------------------------------------------------- accounts
 const founder = new Client('founder');
-const registered = await founder.post('/api/auth/register', {
+// The Founder is provisioned from server configuration at boot, then signs in. Registration
+// can never mint Founder authority, so the suite must not create the account that way.
+const registered = await founder.post('/api/auth/login', {
   email: FOUNDER_EMAIL,
-  username: 'thefounder',
   password: PASSWORD,
-  fullName: 'Hassan Shuaibu Adam',
 });
-check('founder account registers', registered.status < 300, `status ${registered.status}`);
+check('provisioned founder signs in', registered.status < 300, `status ${registered.status}`);
 
-// Promote the real row in the database. Founder authority lives in the users table only —
-// never in a chat message, display name or username.
-const raw = new Database(path.join(DATA_DIR, 'ash-mesh.db'));
-raw.prepare("UPDATE users SET role = 'founder', is_founder = 1 WHERE lower(email) = lower(?)").run(FOUNDER_EMAIL);
+// Founder authority lives in the users table only — never in a chat message, display name or
+// username — and boot provisioning from configuration is its only writer.
+const raw = new Database(path.join(DATA_DIR, 'ash-mesh.db'), { readonly: true });
+const founderRow = raw.prepare('SELECT role, is_founder FROM users WHERE lower(email) = lower(?)').get(FOUNDER_EMAIL);
 raw.close();
+check(
+  'founder authority is provisioned in the database, not derived from the profile',
+  founderRow?.role === 'founder' && founderRow?.is_founder === 1,
+  JSON.stringify(founderRow)
+);
 
 const me = await founder.get('/api/auth/me');
 const founderUser = (me.data && me.data.user) || me.data || {};
