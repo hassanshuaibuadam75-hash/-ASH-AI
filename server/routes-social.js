@@ -153,6 +153,12 @@ router.post('/posts', requireAuth, rateLimit({ name: 'post', limit: 40, windowMs
       return res.status(err.status || 500).json({ error: 'upload_failed', message: err.message || 'Upload failed.' });
     }
   }
+  if (libraryMediaId && !media) {
+    const owned = db.prepare('SELECT * FROM media WHERE id = ? AND owner_id = ?').get(libraryMediaId, req.user.id);
+    if (!owned) return res.status(404).json({ error: 'not_found', message: 'That file is not in your library.' });
+    media = owned;
+    kind = owned.kind === 'audio' ? 'file' : owned.kind;
+  }
   if (sharedPostId && !media) kind = 'share';
   if (sharedPostId) {
     const original = db.prepare('SELECT * FROM posts WHERE id = ?').get(sharedPostId);
