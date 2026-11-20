@@ -468,3 +468,24 @@ CREATE TABLE IF NOT EXISTS payment_events (
   outcome      TEXT NOT NULL DEFAULT '',
   received_at  TEXT NOT NULL
 );
+
+-- #ash AI Creative Studio: one row per generated or edited artefact, owned by its creator.
+-- Mirrors ensureCreativeSchema() in server/creative.js, which creates the same table at boot.
+CREATE TABLE IF NOT EXISTS creative_items (
+  id              TEXT PRIMARY KEY,
+  owner_id        TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  studio          TEXT NOT NULL,
+  kind            TEXT NOT NULL,
+  title           TEXT,
+  prompt          TEXT,
+  op              TEXT,
+  source_media_id TEXT,
+  media_id        TEXT REFERENCES media(id) ON DELETE SET NULL,
+  text_output     TEXT,
+  mime            TEXT,
+  bytes           INTEGER,
+  status          TEXT NOT NULL DEFAULT 'ready',
+  meta            TEXT,
+  created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_creative_owner ON creative_items(owner_id, created_at DESC);
