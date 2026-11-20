@@ -2,6 +2,10 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { PageIntro } from './siteconfig.jsx';
 import { Routes, Route, NavLink, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import AssistantFab from './components/AssistantFab.jsx';
+import Studio from './pages/Studio.jsx';
+import Video from './pages/Video.jsx';
+import Search from './pages/Search.jsx';
+import Dashboard from './pages/Dashboard.jsx';
 import { ensureIdentity } from './crypto.js';
 import { readCapabilities, describeCapabilities } from './uar.js';
 import { Avatar, ToastProvider, useToast, NetworkChip, Spinner } from './ui.jsx';
@@ -141,15 +145,75 @@ function AuthProvider({ children }) {
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
 }
 
-// Five primary destinations, as approved. Everything else is grouped in Menu so the
-// bottom bar never clips on small screens and no feature is removed.
+// The official #ash Mesh navigation. Labels are fixed by the Founder specification.
+// `badge` names the counter that drives each number, so no value is hardcoded.
 const NAV = [
-  { to: '/', label: 'Home', icon: '⌂', end: true },
-  { to: '/friends', label: 'Friends', icon: '⚇' },
-  { to: '/messages', label: 'Messages', icon: '✉' },
-  { to: '/market', label: 'Market', icon: '▤' },
+  { to: '/', label: 'Home', icon: '🏠', end: true },
+  { to: '/friends', label: 'Friends', icon: '👥', badge: 'friendRequests' },
+  { to: '/messages', label: 'Messenger', icon: '💬', badge: 'unreadMessages' },
+  { to: '/video', label: 'Video', icon: '🎬', badge: 'newVideos' },
+  { to: '/notifications', label: 'Notifications', icon: '🔔', badge: 'unreadNotifications' },
+  { to: '/dashboard', label: 'Dashboard', icon: '📊' },
+  { to: '/search', label: 'Search', icon: '🔍' },
   { to: '/menu', label: 'Menu', icon: '☰' },
 ];
+
+// Mobile keeps the primary destinations plus creation; everything else stays reachable
+// from Menu, so no page is hidden from mobile users.
+const MOBILE_NAV = ['/', '/friends', '/messages', '/video', '/menu'];
+
+function navBadge(item, counters) {
+  const value = item.badge && counters ? counters[item.badge] : 0;
+  if (!value) return null;
+  return <span className="nav-badge">{value > 9 ? '9+' : value}</span>;
+}
+
+// Creation menu. Only capabilities that actually work are listed. Reels, Stories and audio
+// posts are not implemented, so they are deliberately absent instead of being dead buttons.
+const CREATE_ACTIONS = [
+  { label: 'New post', icon: '✍️', to: '/', hint: 'Text, photo, video or 3D model' },
+  { label: 'AI Create', icon: '✦', to: '/studio', hint: 'Image, audio, video, documents, slides, writing' },
+  { label: 'Document', icon: '📄', to: '/studio?studio=document', hint: 'Create a real downloadable file' },
+];
+
+function CreateMenu({ open, onClose }) {
+  const navigate = useNavigate();
+  if (!open) return null;
+  return (
+    <div
+      role="presentation"
+      onClick={onClose}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.62)', zIndex: 90, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: 12 }}
+    >
+      <div className="card" onClick={(event) => event.stopPropagation()} style={{ width: '100%', maxWidth: 430 }}>
+        <div className="row" style={{ justifyContent: 'space-between' }}>
+          <div className="card-title" style={{ margin: 0 }}>Create</div>
+          <button type="button" className="btn ghost sm" onClick={onClose}>Close</button>
+        </div>
+        <div className="stack" style={{ gap: 8, marginTop: 10 }}>
+          {CREATE_ACTIONS.map((action) => (
+            <button
+              key={action.label}
+              type="button"
+              className="btn ghost"
+              style={{ justifyContent: 'flex-start', textAlign: 'left' }}
+              onClick={() => { onClose(); navigate(action.to); }}
+            >
+              <span aria-hidden="true" style={{ marginRight: 10 }}>{action.icon}</span>
+              <span>
+                <span style={{ display: 'block', fontWeight: 700 }}>{action.label}</span>
+                <span className="tiny muted">{action.hint}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+        <div className="tiny muted" style={{ marginTop: 10 }}>
+          Reels, Stories and audio posts are not implemented yet, so they are not offered here.
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // Secondary destinations reachable from the sidebar and the Menu page.
 const MORE_NAV = [
@@ -159,7 +223,7 @@ const MORE_NAV = [
   { to: '/notifications', label: 'Alerts', icon: '◔' },
 ];
 
-function Sidebar({ unread }) {
+function Sidebar({ counters, onCreate }) {
   const { user, logout } = useAuth();
   return (
     <aside className="sidebar">
@@ -170,13 +234,23 @@ function Sidebar({ unread }) {
           <div className="brand-tag">Your Network. Your Privacy.</div>
         </div>
       </div>
+      <button type="button" className="nav-item" onClick={onCreate}>
+        <span className="ico" aria-hidden="true">➕</span>
+        <span>Plus</span>
+      </button>
       {NAV.map((item) => (
         <NavLink key={item.to} to={item.to} end={item.end} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
           <span className="ico" aria-hidden="true">{item.icon}</span>
           <span>{item.label}</span>
-          {item.to === '/notifications' && unread > 0 ? <span className="nav-badge">{unread > 9 ? '9+' : unread}</span> : null}
+          {navBadge(item, counters)}
         </NavLink>
       ))}
+      {user ? (
+        <NavLink to={`/u/${user.username}`} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+          <span className="ico" aria-hidden="true">👤</span>
+          <span>Profile</span>
+        </NavLink>
+      ) : null}
       <NavLink to={`/u/${user.username}`} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
         <span className="ico" aria-hidden="true">◉</span><span>My Profile</span>
       </NavLink>
@@ -207,22 +281,25 @@ function Sidebar({ unread }) {
   );
 }
 
-function MobileNav({ unread }) {
-  const { user } = useAuth();
+function MobileNav({ counters, onCreate }) {
   return (
     <nav className="mobile-nav">
-      {NAV.slice(0, 5).map((item) => (
+      {NAV.filter((item) => MOBILE_NAV.includes(item.to)).map((item) => (
         <NavLink key={item.to} to={item.to} end={item.end} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
           <span className="ico" aria-hidden="true">{item.icon}</span>
           <span>{item.label}</span>
-          {item.to === '/notifications' && unread > 0 ? <span className="nav-badge">{unread}</span> : null}
+          {navBadge(item, counters)}
         </NavLink>
       ))}
+      <button type="button" className="nav-item" onClick={onCreate}>
+        <span className="ico" aria-hidden="true">➕</span>
+        <span>Plus</span>
+      </button>
     </nav>
   );
 }
 
-function Topbar({ unread }) {
+function Topbar({ counters }) {
   const { user } = useAuth();
   const location = useLocation();
   const [caps, setCaps] = useState(null);
@@ -247,7 +324,8 @@ function Topbar({ unread }) {
   }, []);
 
   const titles = {
-    '/': 'Home', '/friends': 'Friends', '/messages': 'Messages', '/market': 'Marketplace',
+    '/': 'Home', '/friends': 'Friends', '/messages': 'Messenger', '/market': 'Marketplace',
+    '/video': 'Video', '/search': 'Search', '/dashboard': 'Dashboard', '/studio': 'Creative Studio',
     '/ai': '#ash AI', '/notifications': 'Notifications', '/settings': 'Settings',
     '/founder': 'Founder Dashboard', '/founder/editor': 'Founder Editor', '/admin': 'Administration',
   };
@@ -265,7 +343,11 @@ function Topbar({ unread }) {
       </button>
       <NavLink to="/notifications" className="btn ghost sm" title="Notifications" style={{ position: 'relative' }}>
         ◔
-        {unread > 0 ? <span className="nav-badge" style={{ position: 'absolute', top: -6, right: -6 }}>{unread > 9 ? '9+' : unread}</span> : null}
+        {counters?.unreadNotifications ? (
+          <span className="nav-badge" style={{ position: 'absolute', top: -6, right: -6 }}>
+            {counters.unreadNotifications > 9 ? '9+' : counters.unreadNotifications}
+          </span>
+        ) : null}
       </NavLink>
       <NavLink to={`/u/${user.username}`} title="My profile"><Avatar user={user} size={34} /></NavLink>
       {showCaps && caps ? (
@@ -286,7 +368,8 @@ function Topbar({ unread }) {
 
 function Shell() {
   const { user, loading } = useAuth();
-  const [unread, setUnread] = useState(0);
+  const [counters, setCounters] = useState(null);
+  const [createOpen, setCreateOpen] = useState(false);
   const location = useLocation();
 
   useEffect(() => {
@@ -294,9 +377,9 @@ function Shell() {
     let alive = true;
     const load = async () => {
       try {
-        const data = await api('/notifications');
-        if (alive) setUnread((data.notifications || []).filter((n) => !n.readAt).length);
-      } catch { /* ignore */ }
+        const data = await api('/nav/counters');
+        if (alive) setCounters(data);
+      } catch { /* a failed counter refresh must never blank the navigation */ }
     };
     load();
     const timer = setInterval(load, 45000);
@@ -317,9 +400,9 @@ function Shell() {
 
   return (
     <div className="app-shell">
-      <Sidebar unread={unread} />
+      <Sidebar counters={counters} onCreate={() => setCreateOpen(true)} />
       <div className="main-col">
-        <Topbar unread={unread} />
+        <Topbar counters={counters} />
         <PageIntro page={introPage} />
         <Routes>
           <Route path="/" element={<Feed />} />
@@ -340,8 +423,9 @@ function Shell() {
           <Route path="/admin" element={['admin', 'moderator', 'founder'].includes(user.role) ? <Admin /> : <Navigate to="/" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
-        <MobileNav unread={unread} />
+        <MobileNav counters={counters} onCreate={() => setCreateOpen(true)} />
         <AssistantFab />
+        <CreateMenu open={createOpen} onClose={() => setCreateOpen(false)} />
       </div>
     </div>
   );
