@@ -26,6 +26,19 @@ const CAP_LABEL = {
   unavailable: 'Unavailable',
 };
 
+// Studio tab ids and capability ids are different strings ('image' vs 'image.edit'), so the
+// mapping is explicit. Without it every studio would resolve to no capability and look broken.
+const CAPABILITY_BY_STUDIO = {
+  image: 'image.edit',
+  video: 'video.edit',
+  audio: 'audio.edit',
+  document: 'document.create',
+  presentation: 'presentation.create',
+  spreadsheet: 'spreadsheet.create',
+  writing: 'content.write',
+  transcribe: 'audio.transcribe',
+};
+
 function capTone(status) {
   if (status === 'available') return 'green';
   if (status === 'partial') return 'amber';
@@ -43,7 +56,7 @@ function CapabilityList({ capabilities }) {
             <Badge tone={capTone(cap.status)}>{CAP_LABEL[cap.status] || cap.status}</Badge>
             <div className="grow" style={{ minWidth: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 700 }}>{cap.label}</div>
-              <div className="tiny muted">{cap.note}</div>
+              <div className="tiny muted">{cap.detail}</div>
             </div>
           </div>
         ))}
@@ -236,10 +249,8 @@ export default function Studio() {
     return () => { alive = false; };
   }, [loadLibrary]);
 
-  const capabilityFor = (studio) => {
-    const cap = (caps || []).find((c) => c.id === studio);
-    return cap?.status || 'unavailable';
-  };
+  const capFor = (studio) => (caps || []).find((c) => c.id === CAPABILITY_BY_STUDIO[studio]);
+  const capabilityFor = (studio) => capFor(studio)?.status || 'unavailable';
 
   async function submitForm(path, form, onDone) {
     setBusy(true);
@@ -319,9 +330,11 @@ export default function Studio() {
           <Badge tone={capTone(status)}>{CAP_LABEL[status] || status}</Badge>
         </div>
 
-        {disabled ? (
+        {caps === null ? (
+          <div className="small muted">Checking what this deployment can do…</div>
+        ) : disabled ? (
           <div className="small muted">
-            {(caps || []).find((c) => c.id === tab)?.note || 'This capability is not available on this deployment.'}
+            {capFor(tab)?.detail || 'This capability is not available on this deployment.'}
           </div>
         ) : (
           <StudioForm
