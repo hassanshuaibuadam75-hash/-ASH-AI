@@ -21,6 +21,8 @@ import heritageRoutes from './routes-heritage.js';
 import founderEditorRoutes from './routes-founder-editor.js';
 import backupRoutes from './routes-backup.js';
 import walletRoutes from './routes-wallet.js';
+import creativeRoutes from './routes-creative.js';
+import navRoutes from './routes-nav.js';
 import { startBackupScheduler, BACKUP_DIR, BACKUP_INTERVAL_MINUTES } from './backup.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -97,6 +99,8 @@ app.use('/api', heritageRoutes);
 app.use('/api', founderEditorRoutes);
 app.use('/api', backupRoutes);
 app.use('/api', walletRoutes);
+app.use('/api', creativeRoutes);
+app.use('/api', navRoutes);
 
 app.use('/api', (_req, res) => res.status(404).json({ error: 'not_found', message: 'API endpoint not found.' }));
 
