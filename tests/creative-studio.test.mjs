@@ -33,9 +33,9 @@ const FOUNDER_PASSWORD = 'FounderPass123';
 const PORT = 4611;
 const BASE = `http://127.0.0.1:${PORT}`;
 
-// 1x1 PNG — a real image file, small enough to inline.
-const PNG_1X1 =
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==';
+// A real 24x24 PNG (solid #00ff88), verified readable by ImageMagick before embedding.
+const PNG_24X24 =
+  'iVBORw0KGgoAAAANSUhEUgAAABgAAAAYAQMAAADaua+7AAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAAGUExURQD/iP///0dQxoUAAAABYktHRAH/Ai3eAAAAB3RJTUUH6gsUFwcWcVz1/gAAAAxJREFUCNdjYKAtAAAAYAABN5AXeAAAACV0RVh0ZGF0ZTpjcmVhdGUAMjAyNi0xMS0yMFQyMzowNzoyMiswMDowMHMWsuUAAAAldEVYdGRhdGU6bW9kaWZ5ADIwMjYtMTEtMjBUMjM6MDc6MjIrMDA6MDACSwpZAAAAKHRFWHRkYXRlOnRpbWVzdGFtcAAyMDI2LTExLTIwVDIzOjA3OjIyKzAwOjAwVV4rhgAAAABJRU5ErkJggg==';
 
 const results = [];
 let failures = 0;
@@ -235,7 +235,7 @@ async function main() {
     /* ----------------------------- image editing --------------------------- */
 
     const form = new FormData();
-    form.append('file', new Blob([Buffer.from(PNG_1X1, 'base64')], { type: 'image/png' }), 'pixel.png');
+    form.append('file', new Blob([Buffer.from(PNG_24X24, 'base64')], { type: 'image/png' }), 'swatch.png');
     form.append('ops', JSON.stringify({ resize: { width: 32, height: 32 } }));
     form.append('title', 'Resized pixel');
     const edited = await owner.post('/api/creative/image/edit', { form });
@@ -275,10 +275,14 @@ async function main() {
 
     /* --------------------- publishing through moderation ------------------- */
 
-    const publish = await owner.post('/posts', {
+    const publish = await owner.post('/api/posts', {
       json: { body: 'Made in the #ash AI Creative Studio.', audience: 'public', mediaId: edited.data?.item?.mediaId },
     });
-    check('a studio artefact is published by reference', publish.status === 201, `status ${publish.status}`);
+    check(
+      'a studio artefact is published by reference',
+      publish.status === 201 && typeof publish.data?.post?.id === 'string',
+      `status ${publish.status}`
+    );
     check(
       'the published post keeps the generated media',
       publish.data?.post?.mediaId === edited.data?.item?.mediaId,
