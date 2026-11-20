@@ -30,6 +30,16 @@ export default function Menu() {
       ],
     },
     {
+      title: 'Create & discover',
+      items: [
+        { to: '/studio', label: '#ash AI Creative Studio', hint: 'Images, audio, video, documents, slides, writing' },
+        { to: '/video', label: 'Video', hint: 'Videos shared on #ash Mesh' },
+        { to: '/search', label: 'Search', hint: 'Find people, posts and products' },
+        { to: '/market', label: 'Marketplace', hint: 'Products, cart and orders' },
+        { to: '/dashboard', label: 'Dashboard', hint: 'Your page activity and real counters' },
+      ],
+    },
+    {
       title: 'Assistant & support',
       items: [
         { to: '/ai', label: '#ash AI', hint: 'Writing, translation and help' },
