@@ -2,15 +2,18 @@
 //
 // Design rule for this module: a capability is advertised only when the operation can
 // actually run in this environment. ImageMagick and ffmpeg perform the media work, Groq
-// performs the language work. Generative image / video / music providers are NOT
-// configured, so those are reported as provider_required instead of returning a
-// placeholder "result" the user could mistake for real output.
+// performs the language work, and the Office writers in office.js produce DOCX/XLSX/PPTX.
+// Generative image / video / music work is routed through providers.js, which refuses to
+// call a paid provider until the Founder approves a spending limit — those capabilities are
+// reported as `disabled`, never as a placeholder "result" a user could mistake for output.
 import { spawnSync, execFile } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { db, uid, now, UPLOAD_DIR } from './db.js';
 import { groqConfigured } from './ai-groq.js';
+import { openrouterCachedStatus, replicateConfigured, replicateApproval } from './providers.js';
+import { OFFICE_FORMATS, buildOfficeFile, buildXlsx } from './office.js';
 
 const RUN_TIMEOUT = 120000;
 const MAX_EDGE = 8192;
@@ -22,12 +25,21 @@ function hasBinary(name) {
   return probe.status === 0;
 }
 
+/** ImageMagick is `convert` on v6 and `magick` on v7; the Alpine package may ship either. */
+function imageMagickBinary() {
+  if (hasBinary('convert')) return 'convert';
+  if (hasBinary('magick')) return 'magick';
+  return null;
+}
+
 /** Live probe of what this container can genuinely do right now. */
 export function environment() {
   return {
-    imagemagick: hasBinary('convert'),
+    imagemagick: Boolean(imageMagickBinary()),
     ffmpeg: hasBinary('ffmpeg'),
     groq: groqConfigured(),
+    // Office writers are pure Node (zlib only), so they work in every image.
+    office: true,
   };
 }
 
