@@ -122,7 +122,7 @@ function outputPath(ext) {
   return path.join(UPLOAD_DIR, `${uid('out_')}.${ext}`);
 }
 
-function insertMedia({ ownerId, kind, mime, absPath }) {
+export function storeGeneratedFile({ ownerId, kind, mime, absPath }) {
   const buf = fs.readFileSync(absPath);
   const hash = crypto.createHash('sha256').update(buf).digest('hex');
   const id = uid('med_');
