@@ -89,7 +89,7 @@ function Composer({ onCreated, user }) {
     <form className="card composer" onSubmit={submit}>
       <textarea
         className="input"
-        placeholder="Share something with your network…"
+        placeholder="What's on your mind?"
         value={body}
         onChange={(e) => setBody(e.target.value)}
         rows={3}
@@ -105,7 +105,7 @@ function Composer({ onCreated, user }) {
       ) : null}
       <div className="row" style={{ marginTop: 10, flexWrap: 'wrap' }}>
         <label className="btn ghost sm" style={{ cursor: 'pointer' }}>
-          Photo / video / 3D
+          Photo
           <input
             ref={fileRef}
             type="file"

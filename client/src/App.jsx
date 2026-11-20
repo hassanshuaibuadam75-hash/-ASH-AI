@@ -415,6 +415,10 @@ function Shell() {
           <Route path="/academy" element={<Academy />} />
           <Route path="/heritage" element={<Heritage />} />
           <Route path="/notifications" element={<Notifications />} />
+          <Route path="/video" element={<Video />} />
+          <Route path="/search" element={<Search />} />
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/studio" element={<Studio />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/menu" element={<Menu />} />
           <Route path="/u/:username" element={<Profile />} />
