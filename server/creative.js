@@ -53,7 +53,9 @@ export function environment() {
 export function capabilities() {
   const env = environment();
   const media = env.imagemagick && env.ffmpeg;
-  return [
+  const replicate = { configured: replicateConfigured(), approval: replicateApproval() };
+  const openrouter = openrouterCachedStatus();
+  return withProviderStates([
     { id: 'image.edit', studio: 'image', label: 'Edit an image (resize, crop, rotate, light, colour, text, format)', status: env.imagemagick ? 'available' : 'unavailable', detail: env.imagemagick ? 'Runs on this server with ImageMagick. The original file is never modified.' : 'ImageMagick is not installed in this environment.' },
     { id: 'image.generate', studio: 'image', label: 'Create a new image from text', status: 'provider_required', detail: 'Needs a text-to-image provider. No image provider key is configured, so nothing is generated and no fake image is returned.' },
     { id: 'image.understand', studio: 'image', label: 'Describe or read text from an image', status: 'provider_required', detail: 'Needs a vision model. The configured Groq model is text-only.' },
@@ -71,7 +73,90 @@ export function capabilities() {
     { id: 'spreadsheet.create', studio: 'spreadsheet', label: 'Build a CSV spreadsheet from your data', status: 'available', detail: 'Real CSV output. XLSX export needs an Office library that is not installed.' },
     { id: 'code.write', studio: 'code', label: 'Write, explain or debug code', status: env.groq ? 'available' : 'provider_required', detail: env.groq ? 'Text only — generated code is never executed on the server.' : 'Requires the Groq key on the server.' },
     { id: 'content.write', studio: 'writing', label: 'Captions, articles, scripts, hashtags, slogans', status: env.groq ? 'available' : 'provider_required', detail: env.groq ? 'Published content still goes through pre-publication moderation.' : 'Requires the Groq key on the server.' },
-  ];
+    { id: 'text.reasoning', studio: 'writing', label: 'Deep reasoning, document and code assistance', status: 'provider_required', detail: 'Reserved for a second language provider. Groq performs the language work today.' },
+  ], { env, media, replicate, openrouter });
+}
+
+/* --------------------------- provider state merge -------------------------- */
+
+// Capabilities whose work is a paid Replicate run, and those that would need a second
+// language/vision provider. Everything else is local or Groq.
+const REPLICATE_CAPABILITIES = new Set(['image.generate', 'video.generate', 'audio.music']);
+const OPENROUTER_CAPABILITIES = new Set(['image.understand', 'text.reasoning']);
+const GROQ_CAPABILITIES = new Set(['document.write', 'code.write', 'content.write', 'audio.transcribe', 'video.transcribe']);
+
+/**
+ * Replicate is configured but paid, so its capabilities are `disabled` — not
+ * `provider_required` — until a spending limit is approved. The distinction matters: the
+ * provider exists, the permission does not.
+ */
+function replicateCapabilityState(replicate) {
+  if (!replicate.configured) {
+    return {
+      status: 'provider_required', provider: 'replicate', paid: true, approvalRequired: true,
+      detail: 'No generation provider is configured, so nothing is generated and no placeholder file is returned.',
+    };
+  }
+  if (!replicate.approval?.approved) {
+    return {
+      status: 'disabled', provider: 'replicate', paid: true, approvalRequired: true,
+      detail: 'Replicate is connected, but paid generation is switched off: no spending limit has been approved, so no credits are spent. Approve a cap in Settings to enable this studio.',
+    };
+  }
+  return {
+    status: 'partial', provider: 'replicate', paid: true, approvalRequired: false,
+    detail: `Paid generation is approved with a $${replicate.approval.spendCapUsd} cap. Each model still has to pass one real run before its output is trusted.`,
+  };
+}
+
+/** A rejected OpenRouter key is reported once and never retried automatically. */
+function openrouterCapabilityState(openrouter) {
+  switch (openrouter?.state) {
+    case 'ok':
+      return { status: 'available', provider: 'openrouter', paid: false, approvalRequired: false, detail: 'OpenRouter is verified and performs this task.' };
+    case 'invalid':
+      return { status: 'disabled', provider: 'openrouter', paid: false, approvalRequired: false, detail: 'OpenRouter rejected the configured key, so it is switched off until a working key is saved. The rejected key is not retried automatically.' };
+    case 'unverified':
+      return { status: 'partial', provider: 'openrouter', paid: false, approvalRequired: false, detail: 'An OpenRouter key is configured but not yet verified, so no request is sent to it.' };
+    default:
+      return { status: 'provider_required', provider: 'openrouter', paid: false, approvalRequired: false, detail: 'OpenRouter is not configured on this deployment.' };
+  }
+}
+
+/**
+ * Overlay the live provider verdict onto the static registry, so the Studio can never
+ * claim a capability the deployment cannot perform, and can distinguish "waiting for a
+ * provider" from "provider ready but switched off for cost".
+ */
+export function withProviderStates(list, { env, replicate, openrouter }) {
+  const paid = replicateCapabilityState(replicate);
+  const second = openrouterCapabilityState(openrouter);
+  const local = { provider: 'local', paid: false, approvalRequired: false };
+  const groq = { provider: 'groq', paid: false, approvalRequired: false };
+
+  return list.map((cap) => {
+    if (REPLICATE_CAPABILITIES.has(cap.id)) return { ...cap, ...paid };
+    if (OPENROUTER_CAPABILITIES.has(cap.id)) return { ...cap, ...second };
+    if (cap.id === 'document.office') {
+      return {
+        ...cap, ...local, status: 'available',
+        detail: 'DOCX, XLSX and PPTX are written on this server as real Office files that open in Word, Excel and PowerPoint.',
+      };
+    }
+    if (cap.id === 'presentation.create') {
+      return {
+        ...cap, ...groq, status: env.groq ? 'available' : 'provider_required',
+        detail: env.groq ? 'Slides are drafted by #ash AI and exported as a real HTML deck or PPTX file.' : 'Requires the Groq key on the server.',
+      };
+    }
+    if (cap.id === 'spreadsheet.create') {
+      return { ...cap, ...local, status: 'available', detail: 'Real CSV or XLSX output built from the rows you provide.' };
+    }
+    if (cap.id === 'audio.tts') {
+      return { ...cap, provider: 'none', paid: false, approvalRequired: false, status: 'provider_required', detail: 'Needs a speech provider. None is configured, so no audio is produced.' };
+    }
+    return { ...cap, ...(GROQ_CAPABILITIES.has(cap.id) ? groq : local) };
+  });
 }
 
 /* -------------------------------- schema --------------------------------- */
@@ -365,8 +450,14 @@ export function createDocument({ format, title, content }) {
   return { absPath: target, mime: spec.mime, bytes: Buffer.byteLength(payload) };
 }
 
-export function createSpreadsheet({ title, rows }) {
+export function createSpreadsheet({ title, rows, format = 'csv' }) {
   if (!Array.isArray(rows) || !rows.length) throw bad('Provide rows to build the spreadsheet.');
+  if (format === 'xlsx') {
+    const xlsx = outputPath('xlsx');
+    fs.writeFileSync(xlsx, buildXlsx({ title, rows }));
+    return { absPath: xlsx, mime: OFFICE_FORMATS.xlsx.mime, bytes: fs.statSync(xlsx).size };
+  }
+  if (format !== 'csv') throw bad('Supported spreadsheet formats are CSV and XLSX.');
   const clean = rows.slice(0, 5000).map((row) => {
     const cells = Array.isArray(row) ? row : [row];
     return cells.map((cell) => {
@@ -377,4 +468,48 @@ export function createSpreadsheet({ title, rows }) {
   const target = outputPath('csv');
   fs.writeFileSync(target, `${clean.join('\n')}\n`, 'utf8');
   return { absPath: target, mime: 'text/csv', bytes: Buffer.byteLength(clean.join('\n')) };
+}
+
+/* ---------------------------- office documents ---------------------------- */
+
+/**
+ * Write a real DOCX / XLSX / PPTX file into the uploads directory.
+ *   content — plain text paragraphs (DOCX)
+ *   rows    — array of arrays (XLSX)
+ *   slides  — [{ heading, bullets: [] }] (PPTX)
+ * The bytes come from office.js, which builds the OOXML package with zlib only, so this
+ * works in every runtime image without ffmpeg, ImageMagick or a document library.
+ */
+export function createOfficeDocument({ format, title, content, rows, slides }) {
+  const spec = OFFICE_FORMATS[format];
+  if (!spec) throw bad('Supported Office formats are DOCX, XLSX and PPTX.');
+  const buffer = buildOfficeFile({ format, title, content, rows, slides });
+  if (!buffer || !buffer.length) throw bad('The document could not be written.');
+  const target = outputPath(spec.ext);
+  fs.writeFileSync(target, buffer);
+  return { absPath: target, mime: spec.mime, bytes: buffer.length };
+}
+
+/** Parse CSV text into rows (RFC-4180 quoting) so a CSV can be exported as XLSX. */
+export function rowsFromCsv(text) {
+  const source = String(text || '');
+  const rows = [];
+  let row = [];
+  let cell = '';
+  let quoted = false;
+
+  for (let i = 0; i < source.length; i += 1) {
+    const ch = source[i];
+    if (quoted) {
+      if (ch === '"') {
+        if (source[i + 1] === '"') { cell += '"'; i += 1; } else quoted = false;
+      } else cell += ch;
+    } else if (ch === '"') quoted = true;
+    else if (ch === ',') { row.push(cell); cell = ''; }
+    else if (ch === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; }
+    else if (ch !== '\r') cell += ch;
+  }
+  if (cell || row.length) { row.push(cell); rows.push(row); }
+
+  return rows.filter((line) => line.some((value) => String(value).trim() !== ''));
 }
