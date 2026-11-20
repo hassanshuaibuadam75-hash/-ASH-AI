@@ -77,6 +77,12 @@ router.get('/feed', requireAuth, (req, res) => {
       WHERE status='accepted' AND (requester_id = ? OR addressee_id = ?)))`;
     params.push(req.user.id, req.user.id, req.user.id, req.user.id);
   }
+  // Video, photo and other studio output can be filtered from the same feed endpoint.
+  const kindFilter = clean(req.query.kind, 12);
+  if (['text', 'image', 'video', 'file', 'model', 'share'].includes(kindFilter)) {
+    where += ' AND p.kind = ?';
+    params.push(kindFilter);
+  }
   if (cursor) {
     where += ' AND p.created_at < ?';
     params.push(cursor);
@@ -126,7 +132,11 @@ router.post('/posts', requireAuth, rateLimit({ name: 'post', limit: 40, windowMs
     if (existing) return res.status(200).json({ post: serializePost(existing, req.user.id), duplicate: true });
   }
 
-  if (!body && !req.file && !sharedPostId) {
+  // A Creative Studio artefact is published by reference: the client sends the id of media
+  // it already owns instead of uploading the file a second time.
+  const libraryMediaId = clean(req.body.mediaId, 60) || null;
+
+  if (!body && !req.file && !sharedPostId && !libraryMediaId) {
     return badRequest(res, 'Write something or attach a file to publish.');
   }
 
