@@ -1,0 +1,94 @@
+name: Build #ash Mesh APK
+
+on:
+  push:
+    branches:
+      - appjet
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout appjet branch
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: |
+          npm install
+          npm run build
+          cd native
+          npm install
+
+      - name: Preserve native Android source
+        run: |
+          mkdir -p /tmp/ash-native/java
+          cp -R native/android/app/src/main/java/com/ashmesh/app/. /tmp/ash-native/java/
+          cp native/android/app/src/main/AndroidManifest.xml /tmp/ash-native/AndroidManifest.xml
+
+      - name: Generate Capacitor Android project
+        working-directory: native
+        run: |
+          rm -rf android
+          npx cap add android
+          npx cap sync android
+
+      - name: Restore #ash Mesh native Java code
+        run: |
+          mkdir -p native/android/app/src/main/java/com/ashmesh/app
+          cp -R /tmp/ash-native/java/. native/android/app/src/main/java/com/ashmesh/app/
+
+      - name: Restore Android permissions
+        run: |
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          original = ET.parse('/tmp/ash-native/AndroidManifest.xml').getroot()
+          target_path = Path('native/android/app/src/main/AndroidManifest.xml')
+          target_tree = ET.parse(target_path)
+          target = target_tree.getroot()
+
+          for element in original:
+              if element.tag.endswith('uses-permission') or element.tag.endswith('uses-feature'):
+                  if element.tag == 'uses-permission':
+                      name = '{http://schemas.android.com/apk/res/android}name'
+                      value = element.get(name)
+                      exists = any(x.tag == element.tag and x.get(name) == value for x in target)
+                  else:
+                      name = '{http://schemas.android.com/apk/res/android}name'
+                      value = element.get(name)
+                      exists = any(x.tag == element.tag and x.get(name) == value for x in target)
+                  if not exists:
+                      target.insert(0, element)
+
+          ET.register_namespace('android', 'http://schemas.android.com/apk/res/android')
+          target_tree.write(target_path, encoding='utf-8', xml_declaration=True)
+          PY
+
+      - name: Build debug APK
+        working-directory: native/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ash-mesh-debug-apk
+          path: native/android/app/build/outputs/apk/debug/*.apk
